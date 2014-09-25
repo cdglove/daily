@@ -15,21 +15,66 @@
 #include <iostream>
 #include <boost/test/utils/nullstream.hpp>
 
+#ifndef DAILY_ENABLE_LOGGING
+#  define DAILY_ENABLE_LOGGING 1
+#endif
+
 // ----------------------------------------------------------------------------
 //
-inline std::ostream& LOG(unsigned int verbosity = 0)
+namespace daily
+{
+	class logger
+	{
+	public:
+
+		logger(std::ostream& sink)
+			: sink_(sink)
+		{}
+
+		template<typename T>
+		logger& operator<<(T&& t)
+		{
+		#if DAILY_ENABLE_LOGGING
+			sink_ << std::forward<T>(t);
+		#endif
+			return *this;
+		}
+
+		// Allow io-maniplulators.
+		logger& operator<<(std::ostream&(*f)(std::ostream&))
+		{
+		#if DAILY_ENABLE_LOGGING
+			sink_ << f;
+		#endif
+			return *this;
+		}
+
+		std::ostream& sink() 
+		{
+			return sink_;
+		}
+
+	private:
+
+		std::ostream& sink_;
+	};
+}
+
+// ----------------------------------------------------------------------------
+//
+inline daily::logger LOG(unsigned int verbosity = 0)
 {
 	extern unsigned int g_log_level;
 	extern bool			g_use_buffered_log;
 
 	if(g_log_level >= verbosity)
 	{
-		return g_use_buffered_log ? std::clog : std::cerr;
+		return g_use_buffered_log ? daily::logger(std::clog) : daily::logger(std::cerr);
 	}
 	else
 	{
 		static boost::onullstream cnull;
-		return cnull;
+		return daily::logger(cnull);
 	}
 }
 

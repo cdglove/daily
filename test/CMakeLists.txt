@@ -17,4 +17,9 @@ target_link_libraries(test_fast_iostream daily)
 target_include_directories( test_fast_iostream PUBLIC ${Boost_INCLUDE_DIR} )
 add_test(test_fast_iostream test_fast_iostream)
 
+add_executable(test_trace trace/basic.cpp)
+target_link_libraries(test_trace daily)
+target_include_directories( test_trace PUBLIC ${Boost_INCLUDE_DIR} )
+add_test(test_trace test_trace)
+
 
