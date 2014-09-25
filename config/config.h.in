@@ -1,0 +1,7 @@
+#ifndef DAILY_CONFIG_H
+#define DAILY_CONFIG_H
+
+const int kVersionMajor = @daily_VERSION_MAJOR@;
+const int kVersionMinor = @daily_VERSION_MINOR@;
+
+#endif
