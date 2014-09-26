@@ -247,28 +247,28 @@ public:
 };
 
 #if DAILY_ENABLE_INSTRUMENTATION
-#  define AUTO_INSTRUMENT_NODE(name) \
+#  define DAILY_AUTO_INSTRUMENT_NODE(name) \
 	static daily::timer_node name ## _timer(#name); \
 	static daily::register_timer name ## _register(name ## _timer, daily::timer_map::get_default()); \
 	daily::auto_timer_scope name ## _auto_timer_scope(name ## _timer)
 
-#  define DECLARE_INSTRUMENT_NODE(name) \
+#  define DAILY_DECLARE_INSTRUMENT_NODE(name) \
 	static daily::timer_node name ## _timer(#name)
 
-#  define START_INSTRUMENT_NODE(name) \
+#  define DAILY_START_INSTRUMENT_NODE(name) \
 	name ## _timer.start()
 
-#  define STOP_INSTRUMENT_NODE(name) \
+#  define DAILY_STOP_INSTRUMENT_NODE(name) \
 	name ## _timer.stop()
 
-#  define RESET_INSTRUMENT_NODE(name) \
+#  define DAILY_RESET_INSTRUMENT_NODE(name) \
 	name ## _timer.reset()
 #else
-#  define AUTO_INSTRUMENT_NODE(name)
-#  define DECLARE_INSTRUMENT_NODE(name) 
-#  define START_INSTRUMENT_NODE(name)
-#  define STOP_INSTRUMENT_NODE(name)
-#  define RESET_INSTRUMENT_NODE(name)
+#  define DAILY_AUTO_INSTRUMENT_NODE(name)
+#  define DAILY_DECLARE_INSTRUMENT_NODE(name) 
+#  define DAILY_START_INSTRUMENT_NODE(name)
+#  define DAILY_STOP_INSTRUMENT_NODE(name)
+#  define DAILY_RESET_INSTRUMENT_NODE(name)
 #endif
 }
 #endif // _DAILY_TIMER_INSTRUMENT_H_
