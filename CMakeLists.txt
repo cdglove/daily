@@ -10,6 +10,7 @@ configure_file (
  
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(PROJECT_INCLUDE_DIR ".")
+set(daily_INCLUDE_DIR ".")
 
 include(CheckCXXCompilerFlag)
 CHECK_CXX_COMPILER_FLAG("-std=c++11" COMPILER_SUPPORTS_CXX11)
