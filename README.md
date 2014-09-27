@@ -4,14 +4,18 @@ daily
 Daily is a collection of things I find useful in most code I write
 
 - simple timers
+
   Start, stop, elapsed time in seconds.  Very easy to use.
 
 - simple program options
+
   When boost is more than you need.  This is small and header only.
 
 - simple profiling
+
   Macro based instrumentation that reports where time is going.  Not a replacement for a sampling profiler, but can be better in some situations where inlining prevents symbols from showing in the sample and micro optimizations are needed.
 - simple logging
+
   Verbosity based logging system that can be completely complied out of a shipping app if necessary.
 
 - fast_iostream
