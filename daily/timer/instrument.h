@@ -14,6 +14,7 @@
 #ifndef _DAILY_TIMER_INSTRUMENT_H_
 #define _DAILY_TIMER_INSTRUMENT_H_
 
+#include <numeric>
 #include <vector>
 #include <chrono>
 #include <tuple>
