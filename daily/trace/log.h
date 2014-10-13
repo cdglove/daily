@@ -13,13 +13,19 @@
 #define _DAILY_LOG_H_
 
 #include <iostream>
-#include <daily/fast_iostream/fast_ostream.h>
 #include <boost/test/utils/nullstream.hpp>
 
 #ifndef DAILY_ENABLE_LOGGING
 #  define DAILY_ENABLE_LOGGING 1
 #endif
 
+#ifndef DAILY_ENABLE_FAST_LOG
+#  define DAILY_ENABLE_FAST_LOG 0
+#endif
+
+#if DAILY_ENABLE_FAST_LOG
+#  include <daily/fast_iostream/fast_ostream.h>
+#endif
 // ----------------------------------------------------------------------------
 //
 namespace daily
@@ -27,6 +33,13 @@ namespace daily
 	class logger
 	{
 	public:
+	
+	#if DAILY_ENABLE_FAST_LOG
+		typedef daily::fast_ostream<std::ostream> sink_impl;
+	#else
+		typedef std::ostream sink_impl;
+	#endif
+		
 
 		logger(std::ostream& sink)
 			: sink_(sink)
@@ -45,19 +58,23 @@ namespace daily
 		logger& operator<<(std::ostream&(*f)(std::ostream&))
 		{
 		#if DAILY_ENABLE_LOGGING
+		  #if DAILY_ENABLE_FAST_LOG
 			sink_.stream() << f;
+		  #else
+			sink_ << f;
+		  #endif
 		#endif
 			return *this;
 		}
 
-		daily::fast_ostream<std::ostream>& sink() 
+		sink_impl& sink() 
 		{
 			return sink_;
 		}
 
 	private:
 
-		daily::fast_ostream<std::ostream> sink_;
+		sink_impl& sink_;
 	};
 }
 
