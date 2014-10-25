@@ -1,9 +1,10 @@
 cmake_minimum_required(VERSION 2.8)
 project(daily)
-# Avoid broken cmake versioning...
-set(VER_MAJ 1)
-set(VER_MIN 0)
-set(VER_STR 1.0)
+
+set(DAILY_VERSION_MAJOR 1)
+set(DAILY_VERSION_MINOR 0)
+set(DAILY_VERSION_PATCH 0)
+set(DAILY_VERSION_STRING ${DAILY_VERSION_MAJOR}.${DAILY_VERSION_MINOR}.${DAILY_VERSION_PATCH})
 
 option( DAILY_BUILD_TESTS "Build the daily project tests." ON)
 
@@ -11,15 +12,15 @@ include(GNUInstallDirs)
 
 # determine install path for CMake config files
 if(WIN32 AND NOT CYGWIN)
-    set(DEF_INSTALL_CMAKE_DIR CMake)
+	set(DEF_INSTALL_CMAKE_DIR CMake)
 else()
-    set(DEF_INSTALL_CMAKE_DIR lib/cmake/cppnetlib)
+	set(DEF_INSTALL_CMAKE_DIR lib/cmake/cppnetlib)
 endif()
 set(INSTALL_CMAKE_DIR ${DEF_INSTALL_CMAKE_DIR} CACHE PATH "Installation directory for CMake files")
 
 # Make relative cmake install path absolute (needed later on)
 if(NOT IS_ABSOLUTE "${INSTALL_CMAKE_DIR}")
-    set(INSTALL_CMAKE_DIR "${CMAKE_INSTALL_PREFIX}/${INSTALL_CMAKE_DIR}")
+	set(INSTALL_CMAKE_DIR "${CMAKE_INSTALL_PREFIX}/${INSTALL_CMAKE_DIR}")
 endif()
 
 configure_file(
@@ -69,14 +70,14 @@ configure_file(dailyConfig.cmake.in
 	"${PROJECT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/dailyConfig.cmake" @ONLY)
 # ... for both
 configure_file(dailyConfigVersion.cmake.in
-    "${PROJECT_BINARY_DIR}/cppnetlibConfigVersion.cmake" @ONLY)
-# Install the cppnetlibConfig.cmake and cppnetlibConfigVersion.cmake
+    "${PROJECT_BINARY_DIR}/dailyConfigVersion.cmake" @ONLY)
+# Install the dailyConfig.cmake and cppnetlibConfigVersion.cmake
 install(FILES
-    "${PROJECT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/cppnetlibConfig.cmake"
-    "${PROJECT_BINARY_DIR}/cppnetlibConfigVersion.cmake"
+    "${PROJECT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/dailyConfig.cmake"
+    "${PROJECT_BINARY_DIR}/dailyConfigVersion.cmake"
     DESTINATION "${INSTALL_CMAKE_DIR}"
     COMPONENT dev)
 # Install the export set for use with the install-tree
-install(EXPORT cppnetlibTargets
-    DESTINATION "${INSTALL_CMAKE_DIR}"
-    COMPONENT dev)
+# install(EXPORT dailyTargets
+#     DESTINATION "${INSTALL_CMAKE_DIR}"
+#     COMPONENT dev)

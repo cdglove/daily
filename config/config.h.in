@@ -1,8 +1,9 @@
 #ifndef DAILY_CONFIG_H
 #define DAILY_CONFIG_H
 
-const int DailyVersionMajor = @VER_MAJ@;
-const int DailyVersionMinor = @VER_MIN@;
-char const* const DailyVersionString = "@VER_STR@"
+const int DailyVersionMajor = @DAILY_VERSION_MAJOR@;
+const int DailyVersionMinor = @DAILY_VERSION_MINOR@;
+const int DailyVersionPatch = @DAILY_VERSION_PATCH@;
+char const* const DailyVersionString = "@DAILY_VERSION_STRING@"
 
 #endif
