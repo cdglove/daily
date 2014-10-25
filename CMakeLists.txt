@@ -5,7 +5,8 @@ set(DAILY_VERSION_MAJOR 1)
 set(DAILY_VERSION_MINOR 0)
 set(DAILY_VERSION_PATCH 0)
 set(DAILY_VERSION_STRING ${DAILY_VERSION_MAJOR}.${DAILY_VERSION_MINOR}.${DAILY_VERSION_PATCH})
-
+message("Daily Version: ${DAILY_VERSION_STRING}")
+ 
 option( DAILY_BUILD_TESTS "Build the daily project tests." ON)
 
 include(GNUInstallDirs)
