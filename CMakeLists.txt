@@ -31,14 +31,14 @@ configure_file(
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(PROJECT_INCLUDE_DIR ".")
 
-include(CheckCXXCompilerFlag)
-CHECK_CXX_COMPILER_FLAG("-std=c++11" COMPILER_SUPPORTS_CXX11)
-if(COMPILER_SUPPORTS_CXX11)
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-else()
-	if(NOT MSVC)
+if (CMAKE_COMPILER_IS_GNUCXX)
+  include(CheckCXXCompilerFlag)
+  CHECK_CXX_COMPILER_FLAG("-std=c++11" COMPILER_SUPPORTS_CXX11)
+  if(COMPILER_SUPPORTS_CXX11)
+  	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+  else()
 		message(STATUS "The compiler ${CMAKE_CXX_COMPILER} has may not support Please use a different C++ compiler if building fails.")
-	endif()
+  endif()
 endif()
 
 enable_testing()
@@ -50,7 +50,7 @@ endif()
 
 ###
 ## Export Targets
-# (so cpp-netlib can be easily used by other CMake projects)
+# (so daily can be easily used by other CMake projects)
 # [see http://www.cmake.org/Wiki/CMake/Tutorials/How_to_create_a_ProjectConfig.cmake_file]
 
 # Add all targets to the build-tree export set
@@ -72,10 +72,9 @@ configure_file(dailyConfig.cmake.in
 # ... for both
 configure_file(dailyConfigVersion.cmake.in
     "${PROJECT_BINARY_DIR}/dailyConfigVersion.cmake" @ONLY)
-# Install the dailyConfig.cmake and cppnetlibConfigVersion.cmake
+# Install the dailyConfig.cmake
 install(FILES
     "${PROJECT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/dailyConfig.cmake"
-    "${PROJECT_BINARY_DIR}/dailyConfigVersion.cmake"
     DESTINATION "${INSTALL_CMAKE_DIR}"
     COMPONENT dev)
 # Install the export set for use with the install-tree
