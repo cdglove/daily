@@ -201,6 +201,11 @@ public:
 		}
 	}
 
+	bool empty()
+	{
+		return nodes_.empty();
+	}
+
 private:
 
 	// No copying.
