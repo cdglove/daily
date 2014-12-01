@@ -1,5 +1,5 @@
 // ****************************************************************************
-// daily/program_options.h
+// daily/program_options/program_options.h
 //
 // Simple program options utility for when boost.program_options is too much
 //
@@ -9,8 +9,8 @@
 //
 // ****************************************************************************
 #pragma once
-#ifndef _DAILY_PROGRAM_OPTIONS_H_
-#define _DAILY_PROGRAM_OPTIONS_H_
+#ifndef _DAILY_PROGRAMOPTIONS_PROGRAMOPTIONS_H_
+#define _DAILY_PROGRAMOPTIONS_PROGRAMOPTIONS_H_
 
 #include <vector>
 #include <sstream>
@@ -173,4 +173,4 @@ private:
 
 }
 
-#endif // _DAILY_PROGRAM_OPTIONS_H_
+#endif // _DAILY_PROGRAMOPTIONS_PROGRAMOPTIONS_H_
