@@ -12,6 +12,7 @@
 #ifndef _DAILY_MEMORY_BOOSTPOOLALLOCATOR_H_
 #define _DAILY_MEMORY_BOOSTPOOLALLOCATOR_H_
 
+#include <boost/pool/pool.hpp>
 #include <boost/assert.hpp>
 
 // ----------------------------------------------------------------------------
@@ -69,10 +70,10 @@ private:
 	friend class boost_pool_allocator;
 
 	template <typename U, typename V>
-	friend bool operator==(boost_pool_allocator<U> const& a, boost_pool_allocator<U> const& b);
+	friend bool operator==(boost_pool_allocator<U> const& a, boost_pool_allocator<V> const& b);
 
 	template <typename U, typename V>
-	friend bool operator!=(boost_pool_allocator<V> const& a, boost_pool_allocator<V> const& b);
+	friend bool operator!=(boost_pool_allocator<U> const& a, boost_pool_allocator<V> const& b);
 
 	boost::pool<UserAllocator>& pool_;
 };
@@ -80,14 +81,14 @@ private:
 
 // ----------------------------------------------------------------------------
 //
-template <class T, class U>
-bool operator==(boost_pool_allocator<T> const& a, boost_pool_allocator<U> const& b)
+template <typename U, typename V>
+bool operator==(boost_pool_allocator<U> const& a, boost_pool_allocator<V> const& b)
 {
 	return &a.pool_ == &b.pool_;
 }
 
-template <class T, class U>
-bool operator!=(boost_pool_allocator<T> const& a, boost_pool_allocator<U> const& b)
+template <typename U, typename V>
+bool operator!=(boost_pool_allocator<U> const& a, boost_pool_allocator<V> const& b)
 {
 	return &a.pool_ != &b.pool_;
 }
