@@ -188,7 +188,7 @@ public:
 
 			for(auto i = result.begin(); i != result.end(); ++i)
 			{
-				to << get<0>(*i) << " : " << get<1>(*i) << '\n';
+				to << get<0>(*i).data() << " : " << get<1>(*i) << '\n';
 			}
 		}
 	}
