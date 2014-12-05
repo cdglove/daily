@@ -18,6 +18,7 @@
 #include <vector>
 #include <chrono>
 #include <tuple>
+#include <iostream>
 #include <boost/utility/string_ref.hpp>
 
 namespace daily {
@@ -188,7 +189,7 @@ public:
 
 			for(auto i = result.begin(); i != result.end(); ++i)
 			{
-				to << get<0>(*i).data() << " : " << get<1>(*i) << '\n';
+				to << get<0>(*i) << " : " << get<1>(*i) << '\n';
 			}
 		}
 	}
