@@ -227,11 +227,14 @@ public:
 				return get<1>(r) == 0.f;
 			}), result.end());
 
-			std::sort(result.begin(), result.end(), detail::compare_tuple_greater<1>(result[0]));
-
-			for(auto i = result.begin(); i != result.end(); ++i)
+			if(!result.empty())
 			{
-				to << get<0>(*i) << " : " << get<1>(*i) << '\n';
+				std::sort(result.begin(), result.end(), detail::compare_tuple_greater<1>(result[0]));
+
+				for(auto i = result.begin(); i != result.end(); ++i)
+				{
+					to << get<0>(*i) << " : " << get<1>(*i) << '\n';
+				}
 			}
 		}
 	}
