@@ -15,10 +15,12 @@
 #define _DAILY_TIMER_INSTRUMENT_H_
 
 #include <numeric>
+#include <deque>
 #include <vector>
 #include <chrono>
 #include <tuple>
 #include <iostream>
+#include <mutex>
 #include <boost/utility/string_ref.hpp>
 
 namespace daily {
@@ -70,6 +72,41 @@ private:
 	std::chrono::nanoseconds elapsed_;
 };
 
+std::ostream& operator <<(std::ostream& out, timer_node const& node )
+{
+	float elapsed = node.elapsed();
+	out << node.name() << " : " << elapsed;
+	return out;
+}
+
+// ----------------------------------------------------------------------------
+//
+class immediate_timer_node : public timer_node
+{
+public:
+
+	immediate_timer_node(char const* name)
+		: timer_node(name)
+		, out_(std::cout)
+	{}
+
+	immediate_timer_node(char const* name, std::ostream& out)
+		: timer_node(name)
+		, out_(std::cout)
+	{}
+
+	~immediate_timer_node()
+	{
+		out_ << *this << '\n';
+	}
+
+private:
+
+	std::ostream& out_;
+};
+
+// ----------------------------------------------------------------------------
+//
 namespace detail 
 {
 	template<typename Tuple, int Idx>
@@ -136,13 +173,18 @@ public:
 		return map_;
 	}
 
-	void register_node(timer_node& node)
+	timer_node& create_node(char const* name)
 	{
-		nodes_.push_back(&node);
+		std::lock_guard<std::mutex> lock(node_lock_);
+
+		nodes_.emplace_back(name);
+		return nodes_.back();
 	}
 
 	void report(std::ostream& to) const
 	{
+		std::lock_guard<std::mutex> lock(node_lock_);
+
 		typedef std::tuple<boost::string_ref, float> result_type;
 		using std::get;
 		
@@ -150,7 +192,7 @@ public:
 
 		for(auto i = nodes_.begin(); i != nodes_.end(); ++i)
         {
-			result.push_back(std::make_tuple((*i)->name(), (*i)->elapsed()));
+			result.push_back(std::make_tuple(i->name(), i->elapsed()));
 		}
 
 		if(result.size() > 0)
@@ -196,14 +238,16 @@ public:
 
 	void reset_all()
 	{
+		std::lock_guard<std::mutex> lock(node_lock_);
 		for(auto i = nodes_.begin(); i != nodes_.end(); ++i)
 		{
-			(*i)->reset();
+			i->reset();
 		}
 	}
 
 	bool empty()
 	{
+		std::lock_guard<std::mutex> lock(node_lock_);
 		return nodes_.empty();
 	}
 
@@ -213,7 +257,8 @@ private:
 	timer_map(timer_map const&);
 	timer_map& operator=(timer_map);
 
-	std::vector<timer_node*> nodes_;
+	mutable std::mutex node_lock_;
+	std::deque<timer_node> nodes_;
 };
 
 // ----------------------------------------------------------------------------
@@ -241,22 +286,9 @@ private:
 	timer_node& source_node_;
 };
 
-// ----------------------------------------------------------------------------
-//
-class register_timer
-{
-public:
-
-	register_timer(timer_node& timer, timer_map& map)
-	{
-		map.register_node(timer);
-	}
-};
-
 #if DAILY_ENABLE_INSTRUMENTATION
 #  define DAILY_AUTO_INSTRUMENT_NODE(name) \
-	static daily::timer_node name ## _timer(#name); \
-	static daily::register_timer name ## _register(name ## _timer, daily::timer_map::get_default()); \
+	static daily::timer_node& name ## _timer = daily::timer_map::get_default().create_node(#name); \
 	daily::auto_timer_scope name ## _auto_timer_scope(name ## _timer)
 
 #  define DAILY_DECLARE_INSTRUMENT_NODE(name) \
