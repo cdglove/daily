@@ -243,11 +243,84 @@ public:
 		return nodes_.back();
 	}
 
+	static const struct keep_zeroes_tag {} keep_zeroes;
+	static const struct discard_zeroes_tag {} discard_zeroes;
+	static const struct sort_time_tag {} sort_time;
+	static const struct sort_alpha_tag {} sort_alpha;
+
 	void report(std::ostream& to) const
+	{
+		return report_impl(to, get_filter(discard_zeroes), get_sorter(sort_time));;
+	}
+
+	template<typename FilterTag, typename SorterTag>
+	void report(std::ostream& to, FilterTag f, SorterTag s) const
+	{
+		report_impl(to, get_filter(f), get_sorter(s));
+	}
+
+	void reset_all()
+	{
+		std::lock_guard<std::mutex> lock(node_lock_);
+		for(auto i = nodes_.begin(); i != nodes_.end(); ++i)
+		{
+			i->start(); i->stop();
+		}
+	}
+
+	bool empty()
+	{
+		std::lock_guard<std::mutex> lock(node_lock_);
+		return nodes_.empty();
+	}
+
+private:
+
+	struct filter_none_t
+	{
+		bool operator()(double val) const
+		{
+			return false;
+		}
+	};
+
+	struct filter_zeroes_t
+	{
+		bool operator()(double val) const
+		{
+			return val == 0;
+		}
+	};
+
+	struct sort_time_t
+	{
+		template<typename T>
+		void operator()(T& t) const
+		{
+			std::sort(t.begin(), t.end(), detail::compare_tuple_greater<1>(t[0]));
+		}
+	};
+
+	struct sort_alpha_t
+	{
+		template<typename T>
+		void operator()(T& t) const
+		{
+			std::sort(t.begin(), t.end(), detail::compare_tuple_greater<0>(t[0]));
+		}
+	};
+
+	filter_none_t get_filter(keep_zeroes_tag) const { return filter_none_t(); }
+	filter_zeroes_t get_filter(discard_zeroes_tag) const { return filter_zeroes_t(); }
+	sort_time_t get_sorter(sort_time_tag) const { return sort_time_t(); }
+	sort_alpha_t get_sorter(sort_alpha_tag) const { return sort_alpha_t(); }
+
+	template<typename Filter, typename Sorter>
+	void report_impl(std::ostream& to, Filter f, Sorter s) const
 	{
 		std::lock_guard<std::mutex> lock(node_lock_);
 
-		typedef std::tuple<boost::string_ref, float> result_type;
+		typedef std::tuple<boost::string_ref, double> result_type;
 		using std::get;
 
 		std::vector<result_type> result;
@@ -269,7 +342,7 @@ public:
 			{
 				// Accumulate adjacent results with the same name.
 				auto range = std::equal_range(curr, end, *curr, detail::compare_tuple_less<0>(result[0]));
-				float total = std::accumulate(range.first, range.second, 0.f, [](float& accumulator, result_type const& node)
+				double total = std::accumulate(range.first, range.second, 0.0, [](double& accumulator, result_type const& node)
 				{
 					return accumulator + get<1>(node);
 				});
@@ -278,45 +351,31 @@ public:
 
 				while(range.first != range.second)
 				{
-					get<1>(*range.first++) = 0.f;
+					get<1>(*range.first++) = 0.0;
 				}
 
 				curr = range.second;				
 			}
 
-			result.erase(std::remove_if(result.begin(), result.end(), [](result_type const& r)
+			result.erase(std::remove_if(result.begin(), result.end(), [f](result_type const& r)
 			{
-				return get<1>(r) == 0.f;
+				return f(get<1>(r));
 			}), result.end());
 
 			if(!result.empty())
 			{
-				std::sort(result.begin(), result.end(), detail::compare_tuple_greater<1>(result[0]));
+				s(result);
 
 				for(auto i = result.begin(); i != result.end(); ++i)
 				{
+					std::ios_base::fmtflags flags = to.flags();
+					to << std::fixed << std::setprecision( 6 ) << std::setfill( '0' );
 					to << get<0>(*i) << " : " << get<1>(*i) << '\n';
+					to.flags(flags);
 				}
 			}
 		}
 	}
-
-	void reset_all()
-	{
-		std::lock_guard<std::mutex> lock(node_lock_);
-		for(auto i = nodes_.begin(); i != nodes_.end(); ++i)
-		{
-			i->start(); i->stop();
-		}
-	}
-
-	bool empty()
-	{
-		std::lock_guard<std::mutex> lock(node_lock_);
-		return nodes_.empty();
-	}
-
-private:
 
 	// No copying.
 	timer_map(timer_map const&);
