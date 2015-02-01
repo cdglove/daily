@@ -244,10 +244,10 @@ public:
 		return nodes_.back();
 	}
 
-	static const struct keep_zeroes_tag {} keep_zeroes;
-	static const struct discard_zeroes_tag {} discard_zeroes;
-	static const struct sort_time_tag {} sort_time;
-	static const struct sort_alpha_tag {} sort_alpha;
+	enum keep_zeroes_tag { keep_zeroes };
+	enum discard_zeroes_tag { discard_zeroes };
+	enum sort_time_tag { sort_time };
+	enum sort_alpha_tag { sort_alpha };
 
 	void report(std::ostream& to) const
 	{
