@@ -19,6 +19,7 @@
 #include <tuple>
 #include <iostream>
 #include <mutex>
+#include <iomanip>
 #include <boost/utility/string_ref.hpp>
 
 #if DAILY_INSTRUMENTATION_USE_BOOST_TIMER
