@@ -1,21 +1,35 @@
 cmake_minimum_required(VERSION 2.8)
 project(daily)
 
+###############################################################################
+#
+# Versioning
+#
+###############################################################################
 set(DAILY_VERSION_MAJOR 1)
 set(DAILY_VERSION_MINOR 0)
 set(DAILY_VERSION_PATCH 0)
 set(DAILY_VERSION_STRING ${DAILY_VERSION_MAJOR}.${DAILY_VERSION_MINOR}.${DAILY_VERSION_PATCH})
 message("Daily Version: ${DAILY_VERSION_STRING}")
  
+###############################################################################
+#
+# Options
+#
+###############################################################################
 option( DAILY_BUILD_TESTS "Build the daily project tests." ON)
 
-include(GNUInstallDirs)
 
+###############################################################################
+#
 # determine install path for CMake config files
+#
+###############################################################################
+include(GNUInstallDirs)
 if(WIN32 AND NOT CYGWIN)
 	set(DEF_INSTALL_CMAKE_DIR CMake)
 else()
-	set(DEF_INSTALL_CMAKE_DIR lib/cmake/cppnetlib)
+	set(DEF_INSTALL_CMAKE_DIR lib/cmake/daily)
 endif()
 set(INSTALL_CMAKE_DIR ${DEF_INSTALL_CMAKE_DIR} CACHE PATH "Installation directory for CMake files")
 
@@ -24,6 +38,11 @@ if(NOT IS_ABSOLUTE "${INSTALL_CMAKE_DIR}")
 	set(INSTALL_CMAKE_DIR "${CMAKE_INSTALL_PREFIX}/${INSTALL_CMAKE_DIR}")
 endif()
 
+###############################################################################
+#
+# Configure CMake
+#
+###############################################################################
 configure_file(
   "${PROJECT_SOURCE_DIR}/config/config.h.in"
   "${PROJECT_BINARY_DIR}/config.h" )
@@ -48,10 +67,13 @@ if(DAILY_BUILD_TESTS)
 	add_subdirectory(test)
 endif()
 
-###
-## Export Targets
-# (so daily can be easily used by other CMake projects)
+###############################################################################
+#
+# Export Targets
+#
+# (so entity can be easily used by other CMake projects)
 # [see http://www.cmake.org/Wiki/CMake/Tutorials/How_to_create_a_ProjectConfig.cmake_file]
+###############################################################################
 
 # Add all targets to the build-tree export set
 export(TARGETS daily
