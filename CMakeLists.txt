@@ -48,7 +48,8 @@ configure_file(
   "${PROJECT_BINARY_DIR}/config.h" )
  
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
-set(PROJECT_INCLUDE_DIR ".")
+set(DAILY_INCLUDE_DIRS ${PROJECT_SOURCE_DIR} ${PROJECT_BINARY_DIR})
+set(DAILY_LIBRARIES daily)
 
 if (CMAKE_COMPILER_IS_GNUCXX)
   include(CheckCXXCompilerFlag)
@@ -73,6 +74,7 @@ endif()
 #
 # (so entity can be easily used by other CMake projects)
 # [see http://www.cmake.org/Wiki/CMake/Tutorials/How_to_create_a_ProjectConfig.cmake_file]
+#
 ###############################################################################
 
 # Add all targets to the build-tree export set
@@ -84,11 +86,9 @@ export(PACKAGE daily)
 # Create the dailyConfig.cmake and dailyConfigVersion files
 file(RELATIVE_PATH REL_INCLUDE_DIR "${INSTALL_CMAKE_DIR}" "${CMAKE_INSTALL_FULL_INCLUDEDIR}")
 # ... for the build tree
-set(CONF_INCLUDE_DIRS "${PROJECT_SOURCE_DIR}")
 configure_file(dailyConfig.cmake.in
 	"${PROJECT_BINARY_DIR}/dailyConfig.cmake" @ONLY)
 # ... for the install tree
-set(CONF_INCLUDE_DIRS "\${DAILY_CMAKE_DIR}/${REL_INCLUDE_DIR}")
 configure_file(dailyConfig.cmake.in
 	"${PROJECT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/dailyConfig.cmake" @ONLY)
 # ... for both
