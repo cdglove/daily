@@ -19,9 +19,11 @@
 #include <tuple>
 #include <iostream>
 #include <mutex>
+
 #include <iomanip>
 #include <daily/timer/cpu_timer.h>
 #include <boost/utility/string_ref.hpp>
+#include <boost/circular_buffer.hpp>
 
 // ----------------------------------------------------------------------------
 //
@@ -35,16 +37,28 @@ public:
 
 	struct result_type
 	{
-		result_type(boost::string_ref name_, double time_)
+		result_type(
+			boost::string_ref name_, 
+			double latest_time_,
+			double average_time_,
+			double max_time_,
+			double min_time_)
 			: name(name_)
-			, time(time_)
+			, latest_time(latest_time_)
+			, average_time(average_time_)
+			, max_time(max_time_)
+			, min_time(min_time_)
 		{}
 
 		boost::string_ref name;
-		double time;
+		double latest_time;
+		double average_time;
+		double max_time;
+		double min_time;
 	};
 
-	timer_map()
+	timer_map(std::size_t history_length = 100)
+		: history_length_(history_length)
 	{}	
 
 	static timer_map& get_default()
@@ -58,11 +72,29 @@ public:
 		std::lock_guard<std::mutex> lock(node_lock_);
 
 		nodes_.emplace_back(name);
+		sample_history_[name] = boost::circular_buffer<double>(history_length_);
+
 		return nodes_.back();
 	}
 
+	void maybe_create_node(char const* name, cpu_timer*& timer_node)
+	{
+		if(timer_node)
+			return;
+
+		std::lock_guard<std::mutex> lock(node_lock_);
+
+		// Double checked locking pattern.
+		if(timer_node)
+			return;
+
+		nodes_.emplace_back(name);
+		sample_history_[name] = boost::circular_buffer<double>(history_length_);
+		timer_node = &nodes_.back();
+	}
+
 	template<typename OutputIter>
-	void gather_report(OutputIter out) const
+	void gather_report(OutputIter out)
 	{
 		return report_impl( 
 			[&out](result_type r)
@@ -73,7 +105,7 @@ public:
 	}
 
 	template<typename Handler>
-	void emit_report(Handler h) const
+	void emit_report(Handler h)
 	{
 		return report_impl(out, h);
 	}
@@ -95,9 +127,20 @@ public:
 
 private:
 
+	struct sample_type
+	{
+		sample_type(boost::string_ref name_, double time_)
+			: name(name_)
+			, time(time_)
+		{}
+
+		boost::string_ref name;
+		double			  time;
+	};
+
 	struct compare_name_less
 	{
-		bool operator()(result_type const& a, result_type const& b)
+		bool operator()(sample_type const& a, sample_type const& b)
 		{
 			return a.name < b.name;
 		}
@@ -105,25 +148,25 @@ private:
 
 	struct compare_time_greater
 	{
-		bool operator()(result_type const& a, result_type const& b)
+		bool operator()(sample_type const& a, sample_type const& b)
 		{
 			return a.time > b.time;
 		}
 	};
 
 	template<typename Handler>
-	void report_impl(Handler handler) const
+	void report_impl(Handler handler)
 	{
-		SScopeMutexLock lock(node_lock_);
+		std::lock_guard<std::mutex> lock(node_lock_);
 
-		std::vector<result_type> result;
+		std::vector<sample_type> result;
 		std::transform(
 			nodes_.begin(), 
 			nodes_.end(), 
 			std::back_inserter(result),
 			[](cpu_timer const& node)
 			{
-				return timer_map::result_type(node.name(), node.elapsed());
+				return timer_map::sample_type(node.name(), node.elapsed());
 			}
 		);
 
@@ -143,15 +186,35 @@ private:
 					compare_name_less()
 				);
 
-				double total = std::accumulate(
+				double current_total = std::accumulate(
 					range.first, range.second, 0.0, 
-					[](double accumulator, result_type const& node)
+					[](double accumulator, sample_type const& node)
 					{
 						return accumulator + node.time;
 					}
 				);
 
-				handler(result_type(range.first->name, total));
+				// Aggregate some history			
+				auto&& this_history = sample_history_.at(range.first->name);
+				this_history.push_back(current_total);
+				
+				// Find the min and max from history
+				auto min_max_sample = std::minmax_element(this_history.begin(), this_history.end());
+
+				// Find the average.
+				double history_avg 
+					= std::accumulate(this_history.begin(), this_history.end(), 0.0) 
+					/ this_history.size()
+				;
+
+				handler(result_type(
+					range.first->name, 
+					current_total,
+					history_avg,
+					*min_max_sample.first,
+					*min_max_sample.second
+				));
+				
 				curr = range.second;	
 			}		
 		}
@@ -163,6 +226,11 @@ private:
 
 	mutable std::mutex node_lock_;
 	std::deque<cpu_timer> nodes_;
+	std::unordered_map<
+		boost::string_ref, boost::circular_buffer<double>
+	> sample_history_;
+
+	std::size_t history_length_;
 };
 
 } // namespace daily
