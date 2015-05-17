@@ -19,11 +19,28 @@
 #include <tuple>
 #include <iostream>
 #include <mutex>
+#include <unordered_map>
+#include <ostream>
 
 #include <iomanip>
 #include <daily/timer/cpu_timer.h>
 #include <boost/utility/string_ref.hpp>
 #include <boost/circular_buffer.hpp>
+#include <boost/functional/hash.hpp>
+
+// ----------------------------------------------------------------------------
+// Workaround lack of hash support for boost::string_ref
+namespace std
+{
+	template<>
+	struct hash<boost::string_ref>
+	{
+		size_t operator()(boost::string_ref const& sr) const 
+		{
+			return boost::hash_range(sr.begin(), sr.end());
+		}
+	};
+}
 
 // ----------------------------------------------------------------------------
 //
@@ -107,7 +124,7 @@ public:
 	template<typename Handler>
 	void emit_report(Handler h)
 	{
-		return report_impl(out, h);
+		return report_impl(h);
 	}
 
 	void reset_all()
@@ -232,6 +249,18 @@ private:
 
 	std::size_t history_length_;
 };
+
+std::ostream& operator <<(std::ostream& out, timer_map::result_type const& r)
+{
+	out << r.name << '\t'
+		<< r.latest_time << '\t'
+		<< r.average_time << '\t'
+		<< r.max_time << '\t'
+		<< r.min_time
+	;
+
+	return out;
+}
 
 } // namespace daily
 
