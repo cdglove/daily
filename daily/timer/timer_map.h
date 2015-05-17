@@ -252,11 +252,11 @@ private:
 
 std::ostream& operator <<(std::ostream& out, timer_map::result_type const& r)
 {
-	out << r.name << '\t'
-		<< r.latest_time << '\t'
-		<< r.average_time << '\t'
-		<< r.max_time << '\t'
-		<< r.min_time
+	out << std::setw(32) << r.name
+		<< std::setw(10) << r.latest_time
+		<< std::setw(10) << r.average_time
+		<< std::setw(10) << r.max_time
+		<< std::setw(10) << r.min_time
 	;
 
 	return out;
