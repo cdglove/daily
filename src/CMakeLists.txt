@@ -7,6 +7,7 @@ file(GLOB_RECURSE  PROJECT_HEADERS ../*.h)
 find_package( Boost )
 
 add_library( ${PROJECT_NAME} ${PROJECT_SOURCES} ${PROJECT_HEADERS} ) 
-target_include_directories( ${PROJECT_NAME} PUBLIC ${Boost_INCLUDE_DIR} ${DAILY_INCLUDE_DIRS})
+target_include_directories( ${PROJECT_NAME} PUBLIC ${DAILY_INCLUDE_DIRS})
+target_include_directories( ${PROJECT_NAME} PRIVATE ${Boost_INCLUDE_DIRS})
 
 
