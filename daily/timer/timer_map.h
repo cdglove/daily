@@ -132,7 +132,7 @@ public:
 		std::lock_guard<std::mutex> lock(node_lock_);
 		for(auto i = nodes_.begin(); i != nodes_.end(); ++i)
 		{
-			i->start(); i->stop();
+			i->reset();
 		}
 	}
 
@@ -224,13 +224,16 @@ private:
 					/ this_history.size()
 				;
 
-				handler(result_type(
-					range.first->name, 
-					current_total,
-					history_avg,
-					*min_max_sample.first,
-					*min_max_sample.second
-				));
+				if(current_total > 0)
+				{
+					handler(result_type(
+						range.first->name, 
+						current_total,
+						history_avg,
+						*min_max_sample.first,
+						*min_max_sample.second
+					));
+				}
 				
 				curr = range.second;	
 			}		

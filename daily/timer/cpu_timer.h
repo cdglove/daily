@@ -47,6 +47,11 @@ namespace daily
 			timer_.resume();
 		}
 
+		void reset()
+		{
+			timer_.reset();
+		}
+
 		float elapsed() const
 		{
 			return boost::chrono::duration_cast<
@@ -82,6 +87,7 @@ namespace daily
 		cpu_timer(char const* name)
 			: name_(name)
 			, elapsed_(std::chrono::nanoseconds(0))
+			, is_running_(false)
 		{}
 
 		char const* name() const
@@ -93,16 +99,27 @@ namespace daily
 		{
 			elapsed_ = std::chrono::nanoseconds(0);
 			start_ = std::chrono::system_clock::now();
+			is_running_ = true;
 		}
 
 		void stop()
 		{
-			elapsed_ += std::chrono::system_clock::now() - start_;
+			if(is_running_)
+				elapsed_ += std::chrono::system_clock::now() - start_;
+			is_running_ = false;
 		}
 
 		void resume()
 		{
 			start_ = std::chrono::system_clock::now();
+			is_running_ = true;
+		}
+
+		void reset()
+		{
+			elapsed_ = std::chrono::nanoseconds(0);
+			start_ = std::chrono::system_clock::now();
+			is_running_ = false;
 		}
 
 		float elapsed() const
@@ -119,6 +136,7 @@ namespace daily
 		std::chrono::time_point<std::chrono::system_clock> start_;
 		char const* name_;
 		std::chrono::nanoseconds elapsed_;
+		bool is_running_;
 	};
 
 	std::ostream& operator <<(std::ostream& out, cpu_timer const& node )
