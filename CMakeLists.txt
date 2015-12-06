@@ -51,20 +51,11 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(DAILY_INCLUDE_DIRS ${PROJECT_SOURCE_DIR} ${PROJECT_BINARY_DIR})
 set(DAILY_LIBRARIES daily)
 
-if (CMAKE_COMPILER_IS_GNUCXX)
-  include(CheckCXXCompilerFlag)
-  CHECK_CXX_COMPILER_FLAG("-std=c++11" COMPILER_SUPPORTS_CXX11)
-  if(COMPILER_SUPPORTS_CXX11)
-  	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-  else()
-		message(STATUS "The compiler ${CMAKE_CXX_COMPILER} has may not support Please use a different C++ compiler if building fails.")
-  endif()
-endif()
-
-enable_testing()
+set(CMAKE_CXX_STANDARD 11)
 
 add_subdirectory(src)
 if(DAILY_BUILD_TESTS)
+  enable_testing()
 	add_subdirectory(test)
 endif()
 
