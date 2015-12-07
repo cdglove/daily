@@ -48,12 +48,24 @@ configure_file(
   "${PROJECT_BINARY_DIR}/config.h" )
  
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
-set(DAILY_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/include ${PROJECT_BINARY_DIR})
+
+set(DAILY_INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/include" ${PROJECT_BINARY_DIR})
 set(DAILY_LIBRARIES daily)
 
 set(CMAKE_CXX_STANDARD 11)
 
-add_subdirectory(src)
+cmake_minimum_required(VERSION 3.2)
+project (daily)
+ 
+file(GLOB_RECURSE PROJECT_SOURCES src/*.cpp)
+file(GLOB_RECURSE PROJECT_HEADERS include/*.h)
+ 
+find_package( Boost )
+
+add_library( daily ${PROJECT_SOURCES} ${PROJECT_HEADERS} ) 
+target_include_directories( daily PUBLIC ${DAILY_INCLUDE_DIRS})
+target_include_directories( daily PRIVATE ${Boost_INCLUDE_DIRS})
+
 if(DAILY_BUILD_TESTS)
   enable_testing()
 	add_subdirectory(test)
