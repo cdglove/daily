@@ -10,3 +10,5 @@ add_subdirectory(libs/future)
 add_subdirectory(libs/memory)
 add_subdirectory(libs/program_options)
 add_subdirectory(libs/trace)
+
+set(Daily_Libraries ${Daily_Libraries} PARENT_SCOPE)
