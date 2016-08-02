@@ -1,0 +1,15 @@
+[submodule "libs/future"]
+	path = libs/future
+	url = git@github.com:cdglove/daily-future.git
+[submodule "libs/fast_iostream"]
+	path = libs/fast_iostream
+	url = git@github.com:cdglove/daily-fast_iostream.git
+[submodule "libs/memory"]
+	path = libs/memory
+	url = git@github.com:cdglove/daily-memory.git
+[submodule "libs/program_options"]
+	path = libs/program_options
+	url = git@github.com:cdglove/daily-program_options.git
+[submodule "libs/trace"]
+	path = libs/trace
+	url = git@github.com:cdglove/daily-trace.git
