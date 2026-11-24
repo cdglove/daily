@@ -19,14 +19,11 @@
 #include <ostream>
 #include <string>
 #include <type_traits>
+#include <utility>
 
 #include "daily/utility/CompactOptional.hpp"
 
-namespace std {
-inline ostream& operator<<(ostream& os, nullopt_t) {
-  return os << "nullopt";
-}
-} // namespace std
+BOOST_TEST_DONT_PRINT_LOG_VALUE(std::nullopt_t)
 
 namespace {
 
@@ -38,17 +35,18 @@ static_assert(std::is_trivially_destructible_v<daily::compact_optional<int, -1>>
 
 constexpr bool test_constexpr() {
   daily::compact_optional<int, -1> opt;
-  if(opt.has_value())
+  if(opt.has_value()) {
     return false;
+  }
   opt = 10;
-  if(!opt.has_value() || *opt != 10)
+  if(!opt.has_value() || *opt != 10) {
     return false;
-  if(opt.value_or(5) != 10)
+  }
+  if(opt.value_or(5) != 10) {
     return false;
+  }
   opt.reset();
-  if(opt.has_value() || opt.value_or(5) != 5)
-    return false;
-  return true;
+  return !opt.has_value() && opt.value_or(5) == 5;
 }
 static_assert(test_constexpr());
 
@@ -94,6 +92,8 @@ BOOST_AUTO_TEST_CASE(copy_and_move_semantics) {
   BOOST_TEST(b.has_value());
   BOOST_TEST(*b == 100);
 
+  // Moving a trivially copyable type copies it, which is what this checks.
+  // NOLINTNEXTLINE(performance-move-const-arg)
   daily::compact_optional<int, -1> c = std::move(a);
   BOOST_TEST(c.has_value());
   BOOST_TEST(*c == 100);
@@ -168,7 +168,7 @@ BOOST_AUTO_TEST_CASE(aliases) {
   BOOST_TEST(*opt_min == -10);
   BOOST_TEST(opt_min.sentinel() == std::numeric_limits<int>::min());
 
-  daily::compact_optional_lowest<int> opt_lowest;
+  daily::compact_optional_lowest<int> const opt_lowest;
   BOOST_TEST(!opt_lowest.has_value());
   BOOST_TEST(opt_lowest.sentinel() == std::numeric_limits<int>::lowest());
 
@@ -252,7 +252,7 @@ BOOST_AUTO_TEST_CASE(swap_operation) {
 }
 
 BOOST_AUTO_TEST_CASE(std_hash_support) {
-  daily::compact_optional<int, -1> empty;
+  daily::compact_optional<int, -1> const empty;
   daily::compact_optional<int, -1> engaged(42);
 
   std::hash<daily::compact_optional<int, -1>> hasher;

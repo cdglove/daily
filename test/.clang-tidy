@@ -1,0 +1,11 @@
+---
+InheritParentConfig: true
+# Boost.Test's test case macros define structs with external linkage.
+#
+# bugprone-use-after-move stays on, although tests check moved-from objects
+# on purpose, which needs NOLINTs. clang-tidy picks the checks from the
+# configuration of the file it compiles, also for the headers it includes, so
+# turning it off here would stop it checking templates that only tests
+# instantiate.
+Checks: -misc-use-internal-linkage
+...

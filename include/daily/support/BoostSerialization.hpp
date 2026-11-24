@@ -49,15 +49,15 @@ namespace boost::serialization {
 
 template <typename T, T Sentinel>
 struct implementation_level_impl<const daily::compact_optional<T, Sentinel>> {
-  typedef mpl::integral_c_tag tag;
-  typedef mpl::int_<object_serializable> type;
+  using tag = mpl::integral_c_tag;
+  using type = mpl::int_<object_serializable>;
   BOOST_STATIC_CONSTANT(int, value = type::value);
 };
 
 template <typename T, T Sentinel>
 struct tracking_level<daily::compact_optional<T, Sentinel>> {
-  typedef mpl::integral_c_tag tag;
-  typedef mpl::int_<track_never> type;
+  using tag = mpl::integral_c_tag;
+  using type = mpl::int_<track_never>;
   BOOST_STATIC_CONSTANT(int, value = type::value);
 };
 

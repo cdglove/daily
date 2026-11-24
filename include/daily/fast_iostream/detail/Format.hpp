@@ -26,7 +26,7 @@
 #include <system_error>
 #include <type_traits>
 
-namespace daily { namespace detail {
+namespace daily::detail {
 
 // Long enough for any arithmetic type written by std::to_chars in its
 // shortest round trip form.
@@ -36,9 +36,9 @@ inline constexpr std::size_t kMaxNumberChars = 64;
 // value, ignoring the locale.
 template <typename OutIter, typename T>
 OutIter write_number(OutIter out, T value) {
-  char buf[kMaxNumberChars];
-  std::to_chars_result r = std::to_chars(buf, buf + kMaxNumberChars, value);
-  return std::copy(buf, r.ptr, out);
+  std::array<char, kMaxNumberChars> buf;
+  std::to_chars_result r = std::to_chars(buf.data(), buf.data() + buf.size(), value);
+  return std::copy(buf.data(), r.ptr, out);
 }
 
 template <typename T>
@@ -157,6 +157,6 @@ bool parse_number(FixedInputString<N> const& s, T& v) {
 
   return true;
 }
-}} // namespace daily::detail
+} // namespace daily::detail
 
 #endif // DAILY_FAST_IOSTREAM_DETAIL_FORMAT_HPP

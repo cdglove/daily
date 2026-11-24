@@ -24,7 +24,7 @@
 
 namespace {
 
-constexpr std::size_t kGiB = std::size_t(1) << 30;
+constexpr std::size_t kGiB = std::size_t{1} << 30;
 
 // Counts live instances, and throws from the constructor once
 // throw_after more have been made.
@@ -62,7 +62,7 @@ struct Counted {
 BOOST_AUTO_TEST_CASE(VirtualVector_default_is_empty) {
   daily::VirtualVector<int> v;
   BOOST_TEST(v.empty());
-  BOOST_TEST(v.size() == 0u);
+  BOOST_TEST(v.empty());
   BOOST_TEST(v.capacity() == 0u);
   BOOST_TEST(v.max_size() == 0u);
   BOOST_CHECK_THROW(v.push_back(1), std::length_error);
@@ -78,15 +78,15 @@ BOOST_AUTO_TEST_CASE(VirtualVector_starts_uncommitted) {
 
 // Growing past several commits leaves the elements where they were.
 BOOST_AUTO_TEST_CASE(VirtualVector_grows_in_place) {
-  daily::VirtualMemory memory(kGiB);
+  daily::VirtualMemory const memory(kGiB);
   daily::VirtualVector<std::uint64_t> v(memory.region());
   v.push_back(0);
-  std::uint64_t const* const first = &v[0];
+  std::uint64_t const* const first = v.data();
   std::size_t const n = 4 * daily::VirtualVector<std::uint64_t>::kMinCommit;
   for(std::uint64_t i = 1; i < n; ++i) {
     v.push_back(i);
   }
-  BOOST_TEST(&v[0] == first);
+  BOOST_TEST(v.data() == first);
   BOOST_TEST(v.size() == n);
   BOOST_TEST(v.capacity() >= n);
   BOOST_TEST(v.capacity() < v.max_size());
@@ -100,7 +100,7 @@ BOOST_AUTO_TEST_CASE(VirtualVector_grows_in_place) {
 }
 
 BOOST_AUTO_TEST_CASE(VirtualVector_push_back_own_element_while_growing) {
-  daily::VirtualMemory memory(kGiB);
+  daily::VirtualMemory const memory(kGiB);
   daily::VirtualVector<std::string> v(memory.region());
   v.push_back("first");
   while(v.size() < v.capacity()) {
@@ -115,7 +115,7 @@ BOOST_AUTO_TEST_CASE(VirtualVector_push_back_own_element_while_growing) {
 // Vectors in regions at fixed offsets stay exactly that far apart.
 BOOST_AUTO_TEST_CASE(VirtualVector_regions_keep_their_offset) {
   constexpr std::size_t kHalf = 64 * kGiB;
-  daily::VirtualMemory memory(2 * kHalf);
+  daily::VirtualMemory const memory(2 * kHalf);
   daily::VirtualVector<std::uint32_t> low(memory.region(0, kHalf));
   daily::VirtualVector<std::uint32_t> high(memory.region(kHalf, kHalf));
   for(std::uint32_t i = 0; i < 1'000'000; ++i) {
@@ -131,7 +131,7 @@ BOOST_AUTO_TEST_CASE(VirtualVector_regions_keep_their_offset) {
 
 BOOST_AUTO_TEST_CASE(VirtualVector_full_region_throws) {
   std::size_t const page = daily::VirtualMemory::page_size();
-  daily::VirtualMemory memory(page);
+  daily::VirtualMemory const memory(page);
   daily::VirtualVector<std::uint64_t> v(memory.region(0, page));
   v.resize(v.max_size());
   BOOST_TEST(v.capacity() == v.max_size());
@@ -141,7 +141,7 @@ BOOST_AUTO_TEST_CASE(VirtualVector_full_region_throws) {
 }
 
 BOOST_AUTO_TEST_CASE(VirtualVector_resize_constructs_and_destroys) {
-  daily::VirtualMemory memory(kGiB);
+  daily::VirtualMemory const memory(kGiB);
   {
     daily::VirtualVector<Counted> v(memory.region());
     v.resize(10);
@@ -174,7 +174,7 @@ BOOST_AUTO_TEST_CASE(VirtualVector_resize_constructs_and_destroys) {
 }
 
 BOOST_AUTO_TEST_CASE(VirtualVector_resize_undoes_a_failed_construction) {
-  daily::VirtualMemory memory(kGiB);
+  daily::VirtualMemory const memory(kGiB);
   daily::VirtualVector<Counted> v(memory.region());
   v.resize(2);
   Counted::throw_after = 3;
@@ -188,7 +188,7 @@ BOOST_AUTO_TEST_CASE(VirtualVector_resize_undoes_a_failed_construction) {
 BOOST_AUTO_TEST_CASE(VirtualVector_shrink_to_fit_decommits) {
   using Vector = daily::VirtualVector<std::uint64_t>;
   std::size_t const page = daily::VirtualMemory::page_size();
-  daily::VirtualMemory memory(kGiB);
+  daily::VirtualMemory const memory(kGiB);
   Vector v(memory.region());
   v.resize(4 * Vector::kMinCommit / sizeof(std::uint64_t), 7);
   v[1] = 42;
@@ -209,7 +209,7 @@ BOOST_AUTO_TEST_CASE(VirtualVector_shrink_to_fit_decommits) {
 }
 
 BOOST_AUTO_TEST_CASE(VirtualVector_move_takes_the_region) {
-  daily::VirtualMemory memory(kGiB);
+  daily::VirtualMemory const memory(kGiB);
   daily::VirtualVector<std::string> a(memory.region());
   a.push_back("x");
   std::string const* const data = a.data();
@@ -217,6 +217,7 @@ BOOST_AUTO_TEST_CASE(VirtualVector_move_takes_the_region) {
   daily::VirtualVector<std::string> b(std::move(a));
   BOOST_TEST(b.data() == data);
   BOOST_TEST(b.size() == 1u);
+  // NOLINTNEXTLINE(bugprone-use-after-move): checks the moved-from state
   BOOST_TEST(a.empty());
   BOOST_TEST(a.max_size() == 0u);
 
@@ -224,6 +225,7 @@ BOOST_AUTO_TEST_CASE(VirtualVector_move_takes_the_region) {
   c = std::move(b);
   BOOST_TEST(c.data() == data);
   BOOST_TEST(c[0] == "x");
+  // NOLINTNEXTLINE(bugprone-use-after-move): checks the moved-from state
   BOOST_TEST(b.max_size() == 0u);
 
   swap(a, c);
@@ -234,7 +236,7 @@ BOOST_AUTO_TEST_CASE(VirtualVector_move_takes_the_region) {
 // Destroying a vector decommits its pages, so another vector can start
 // afresh in the same region.
 BOOST_AUTO_TEST_CASE(VirtualVector_region_reused_after_destruction) {
-  daily::VirtualMemory memory(kGiB);
+  daily::VirtualMemory const memory(kGiB);
   {
     daily::VirtualVector<std::uint64_t> v(memory.region());
     v.resize(1000, 9);
@@ -246,7 +248,7 @@ BOOST_AUTO_TEST_CASE(VirtualVector_region_reused_after_destruction) {
 }
 
 BOOST_AUTO_TEST_CASE(VirtualVector_iterates) {
-  daily::VirtualMemory memory(kGiB);
+  daily::VirtualMemory const memory(kGiB);
   daily::VirtualVector<int> v(memory.region());
   for(int i = 0; i < 5; ++i) {
     v.push_back(i);

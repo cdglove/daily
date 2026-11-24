@@ -25,34 +25,45 @@ class FastNumPut : public std::num_put<char> {
     return base_type::do_put(out, str, fill, v);
   }
 
-  iter_type do_put(iter_type out, std::ios_base& str, char_type fill, long v) const override {
-    return detail::write_number(out, v);
-  }
-
-  iter_type do_put(iter_type out, std::ios_base& str, char_type fill, long long v)
-      const override {
-    return detail::write_number(out, v);
-  }
-
-  iter_type do_put(iter_type out, std::ios_base& str, char_type fill, unsigned long v)
+  iter_type do_put(iter_type out, std::ios_base& /*str*/, char_type /*fill*/, long v)
       const override {
     return detail::write_number(out, v);
   }
 
   iter_type do_put(
       iter_type out,
-      std::ios_base& str,
-      char_type fill,
+      std::ios_base& /*str*/,
+      char_type /*fill*/,
+      long long v) const override {
+    return detail::write_number(out, v);
+  }
+
+  iter_type do_put(
+      iter_type out,
+      std::ios_base& /*str*/,
+      char_type /*fill*/,
+      unsigned long v) const override {
+    return detail::write_number(out, v);
+  }
+
+  iter_type do_put(
+      iter_type out,
+      std::ios_base& /*str*/,
+      char_type /*fill*/,
       unsigned long long v) const override {
     return detail::write_number(out, v);
   }
 
-  iter_type do_put(iter_type out, std::ios_base& str, char_type fill, double v) const override {
+  iter_type do_put(iter_type out, std::ios_base& /*str*/, char_type /*fill*/, double v)
+      const override {
     return detail::write_number(out, v);
   }
 
-  iter_type do_put(iter_type out, std::ios_base& str, char_type fill, long double v)
-      const override {
+  iter_type do_put(
+      iter_type out,
+      std::ios_base& /*str*/,
+      char_type /*fill*/,
+      long double v) const override {
     return detail::write_number(out, v);
   }
 
@@ -70,7 +81,7 @@ std::istreambuf_iterator<char> get_number(
     std::istreambuf_iterator<char> end,
     std::ios_base::iostate& err,
     T& v) {
-  detail::FixedInputString<32> s(in, end);
+  detail::FixedInputString<32> const s(in, end);
   if(!detail::parse_number(s, v)) {
     err |= std::ios_base::failbit;
   }
@@ -96,7 +107,7 @@ class FastNumGet : public std::num_get<char> {
   iter_type do_get(
       iter_type in,
       iter_type end,
-      std::ios_base& str,
+      std::ios_base& /*str*/,
       std::ios_base::iostate& err,
       long& v) const override {
     return get_number(in, end, err, v);
@@ -105,7 +116,7 @@ class FastNumGet : public std::num_get<char> {
   iter_type do_get(
       iter_type in,
       iter_type end,
-      std::ios_base& str,
+      std::ios_base& /*str*/,
       std::ios_base::iostate& err,
       long long& v) const override {
     return get_number(in, end, err, v);
@@ -114,7 +125,7 @@ class FastNumGet : public std::num_get<char> {
   iter_type do_get(
       iter_type in,
       iter_type end,
-      std::ios_base& str,
+      std::ios_base& /*str*/,
       std::ios_base::iostate& err,
       unsigned short& v) const override {
     return get_number(in, end, err, v);
@@ -123,7 +134,7 @@ class FastNumGet : public std::num_get<char> {
   iter_type do_get(
       iter_type in,
       iter_type end,
-      std::ios_base& str,
+      std::ios_base& /*str*/,
       std::ios_base::iostate& err,
       unsigned int& v) const override {
     return get_number(in, end, err, v);
@@ -132,7 +143,7 @@ class FastNumGet : public std::num_get<char> {
   iter_type do_get(
       iter_type in,
       iter_type end,
-      std::ios_base& str,
+      std::ios_base& /*str*/,
       std::ios_base::iostate& err,
       unsigned long& v) const override {
     return get_number(in, end, err, v);
@@ -141,7 +152,7 @@ class FastNumGet : public std::num_get<char> {
   iter_type do_get(
       iter_type in,
       iter_type end,
-      std::ios_base& str,
+      std::ios_base& /*str*/,
       std::ios_base::iostate& err,
       unsigned long long& v) const override {
     return get_number(in, end, err, v);
@@ -150,7 +161,7 @@ class FastNumGet : public std::num_get<char> {
   iter_type do_get(
       iter_type in,
       iter_type end,
-      std::ios_base& str,
+      std::ios_base& /*str*/,
       std::ios_base::iostate& err,
       float& v) const override {
     return get_number(in, end, err, v);
@@ -159,7 +170,7 @@ class FastNumGet : public std::num_get<char> {
   iter_type do_get(
       iter_type in,
       iter_type end,
-      std::ios_base& str,
+      std::ios_base& /*str*/,
       std::ios_base::iostate& err,
       double& v) const override {
     return get_number(in, end, err, v);
@@ -168,7 +179,7 @@ class FastNumGet : public std::num_get<char> {
   iter_type do_get(
       iter_type in,
       iter_type end,
-      std::ios_base& str,
+      std::ios_base& /*str*/,
       std::ios_base::iostate& err,
       long double& v) const override {
     return get_number(in, end, err, v);

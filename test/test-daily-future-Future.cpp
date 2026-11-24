@@ -115,6 +115,7 @@ BOOST_AUTO_TEST_CASE(future_move_semantics) {
     daily::future<T> f = p.get_future();
     daily::future<T> f2 = std::move(f);
     BOOST_TEST_CHECK(f2.valid() == true);
+    // NOLINTNEXTLINE(bugprone-use-after-move): checks the moved-from state
     BOOST_TEST_CHECK(f.valid() == false);
     p.set_value(3);
     BOOST_TEST_CHECK(f2.get() == 3);
@@ -127,6 +128,7 @@ BOOST_AUTO_TEST_CASE(future_move_semantics) {
     daily::future<T> f = p.get_future();
     daily::future<T> f2 = std::move(f);
     BOOST_TEST_CHECK(f2.valid() == true);
+    // NOLINTNEXTLINE(bugprone-use-after-move): checks the moved-from state
     BOOST_TEST_CHECK(f.valid() == false);
     int result = 3;
     p.set_value(result);
@@ -140,6 +142,7 @@ BOOST_AUTO_TEST_CASE(future_move_semantics) {
     daily::future<T> f = p.get_future();
     daily::future<T> f2 = std::move(f);
     BOOST_TEST_CHECK(f2.valid() == true);
+    // NOLINTNEXTLINE(bugprone-use-after-move): checks the moved-from state
     BOOST_TEST_CHECK(f.valid() == false);
     p.set_value();
     f2.get();
@@ -150,10 +153,11 @@ BOOST_AUTO_TEST_CASE(future_move_semantics) {
 BOOST_AUTO_TEST_CASE(future_continuation_noncircular) {
   daily::promise<float> p;
   daily::future<float> f = p.get_future();
-  daily::future<int> f2 = f.then([](float f) { return (int)f * 2; });
+  daily::future<int> f2 = f.then([](float f) { return static_cast<int>(f) * 2; });
   BOOST_TEST_CHECK(f2.valid() == true);
   BOOST_TEST_CHECK(f.valid() == false);
-  daily::future<short> f3 = f2.then([](int i) { return (short)(i * 2); });
+  daily::future<short> f3 = f2.then(
+      [](int i) { return static_cast<short>(i * 2); });
 }
 
 BOOST_AUTO_TEST_CASE(future_continuation_void) {
@@ -162,14 +166,15 @@ BOOST_AUTO_TEST_CASE(future_continuation_void) {
   daily::future<int> f2 = f.then([] { return 2; });
   BOOST_TEST_CHECK(f2.valid() == true);
   BOOST_TEST_CHECK(f.valid() == false);
-  daily::future<short> f3 = f2.then([](int i) { return (short)(i * 2); });
+  daily::future<short> f3 = f2.then(
+      [](int i) { return static_cast<short>(i * 2); });
 }
 
 BOOST_AUTO_TEST_CASE(future_continuations_consistent) {
   bool ran = false;
   daily::promise<char>().get_future().then([&](char) { ran = true; });
   BOOST_TEST_CHECK(!ran);
-  daily::promise<void>().get_future().then([&]() { ran = true; });
+  daily::promise<void>().get_future().then([&] { ran = true; });
   BOOST_TEST_CHECK(!ran);
   daily::promise<int&>().get_future().then([&](int&) { ran = true; });
   BOOST_TEST_CHECK(!ran);
@@ -178,10 +183,11 @@ BOOST_AUTO_TEST_CASE(future_continuations_consistent) {
 BOOST_AUTO_TEST_CASE(future_any_continuation) {
   daily::promise<float> p;
   daily::future<float> f = p.get_future();
-  daily::future<int> f2 = f.then([](float f) { return (int)f * 2; });
+  daily::future<int> f2 = f.then([](float f) { return static_cast<int>(f) * 2; });
   BOOST_TEST_CHECK(f2.valid() == true);
   BOOST_TEST_CHECK(f.valid() == false);
-  daily::future<short> f3 = f2.then([](int i) { return (short)(i * 2); });
+  daily::future<short> f3 = f2.then(
+      [](int i) { return static_cast<short>(i * 2); });
   p.set_value(1.f);
   BOOST_TEST_CHECK(f3.get() == 4);
   f3 = daily::future<short>();
@@ -190,13 +196,13 @@ BOOST_AUTO_TEST_CASE(future_any_continuation) {
 BOOST_AUTO_TEST_CASE(future_get_continuation) {
   daily::promise<float> p;
   daily::future<float> f = p.get_future();
-  daily::future<int> f2 = f.then([](float f) { return (int)f * 2; });
+  daily::future<int> f2 = f.then([](float f) { return static_cast<int>(f) * 2; });
   BOOST_TEST_CHECK(f2.valid() == true);
   BOOST_TEST_CHECK(f.valid() == false);
   bool continued = false;
   daily::future<short> f3 = f2.then(daily::continue_on::get, [&continued](int i) {
     continued = true;
-    return (short)(i * 2);
+    return static_cast<short>(i * 2);
   });
   p.set_value(1.f);
   BOOST_TEST_CHECK(continued == false);
@@ -208,7 +214,7 @@ BOOST_AUTO_TEST_CASE(future_get_chain_continuation) {
   daily::promise<float> p;
   daily::future<float> f = p.get_future();
   daily::future<int> f2 = f.then(daily::continue_on::get, [](float f) {
-    return (int)f * 2;
+    return static_cast<int>(f) * 2;
   });
 
   BOOST_TEST_CHECK(f2.valid() == true);
@@ -216,7 +222,7 @@ BOOST_AUTO_TEST_CASE(future_get_chain_continuation) {
   bool continued = false;
   daily::future<short> f3 = f2.then(daily::continue_on::get, [&continued](int i) {
     continued = true;
-    return (short)(i * 2);
+    return static_cast<short>(i * 2);
   });
   p.set_value(1.f);
   BOOST_TEST_CHECK(continued == false);
@@ -227,13 +233,13 @@ BOOST_AUTO_TEST_CASE(future_get_chain_continuation) {
 BOOST_AUTO_TEST_CASE(future_set_continuation) {
   daily::promise<float> p;
   daily::future<float> f = p.get_future();
-  daily::future<int> f2 = f.then([](float f) { return (int)f * 2; });
+  daily::future<int> f2 = f.then([](float f) { return static_cast<int>(f) * 2; });
   BOOST_TEST_CHECK(f2.valid() == true);
   BOOST_TEST_CHECK(f.valid() == false);
   bool continued = false;
   daily::future<short> f3 = f2.then(daily::continue_on::set, [&continued](int i) {
     continued = true;
-    return (short)(i * 2);
+    return static_cast<short>(i * 2);
   });
   p.set_value(1.f);
   BOOST_TEST_CHECK(continued == true);
@@ -244,7 +250,7 @@ BOOST_AUTO_TEST_CASE(future_set_chain_continuation) {
   daily::promise<float> p;
   daily::future<float> f = p.get_future();
   daily::future<int> f2 = f.then(daily::continue_on::set, [](float f) {
-    return (int)f * 2;
+    return static_cast<int>(f) * 2;
   });
 
   BOOST_TEST_CHECK(f2.valid() == true);
@@ -252,7 +258,7 @@ BOOST_AUTO_TEST_CASE(future_set_chain_continuation) {
   bool continued = false;
   daily::future<short> f3 = f2.then(daily::continue_on::set, [&continued](int i) {
     continued = true;
-    return (short)(i * 2);
+    return static_cast<short>(i * 2);
   });
   p.set_value(1.f);
   BOOST_TEST_CHECK(continued == true);
@@ -265,7 +271,7 @@ BOOST_AUTO_TEST_CASE(future_get_set_chain_continuation) {
   bool get_ran = false;
   daily::future<int> f2 = f.then(daily::continue_on::get, [&get_ran](float f) {
     get_ran = true;
-    return (int)f * 2;
+    return static_cast<int>(f) * 2;
   });
 
   BOOST_TEST_CHECK(f2.valid() == true);
@@ -273,7 +279,7 @@ BOOST_AUTO_TEST_CASE(future_get_set_chain_continuation) {
   bool set_ran = false;
   daily::future<short> f3 = f2.then(daily::continue_on::set, [&set_ran](int i) {
     set_ran = true;
-    return (short)(i * 2);
+    return static_cast<short>(i * 2);
   });
   BOOST_TEST_CHECK(get_ran == false);
   p.set_value(1.f);
@@ -289,7 +295,7 @@ BOOST_AUTO_TEST_CASE(future_set_get_chain_continuation) {
   bool set_ran = false;
   daily::future<int> f2 = f.then(daily::continue_on::set, [&set_ran](float f) {
     set_ran = true;
-    return (int)f * 2;
+    return static_cast<int>(f) * 2;
   });
 
   BOOST_TEST_CHECK(f2.valid() == true);
@@ -297,7 +303,7 @@ BOOST_AUTO_TEST_CASE(future_set_get_chain_continuation) {
   bool get_ran = false;
   daily::future<short> f3 = f2.then(daily::continue_on::get, [&get_ran](int i) {
     get_ran = true;
-    return (short)(i * 2);
+    return static_cast<short>(i * 2);
   });
   BOOST_TEST_CHECK(set_ran == false);
   p.set_value(1.f);
@@ -312,7 +318,7 @@ BOOST_AUTO_TEST_CASE(future_multithread) {
   while(repeat--) {
     daily::promise<float> p;
     daily::future<float> f = p.get_future();
-    std::jthread t([&p, repeat] { p.set_value((float)repeat); });
+    std::jthread t([&p, repeat] { p.set_value(static_cast<float>(repeat)); });
     BOOST_TEST_CHECK(f.get() == repeat);
   }
 }
@@ -358,12 +364,12 @@ BOOST_AUTO_TEST_CASE(promise_future_get_throws) {
 BOOST_AUTO_TEST_CASE(promise_future_get_continuation_throws) {
   daily::promise<float> p;
   daily::future<float> f = p.get_future();
-  daily::future<int> f2 = f.then([](float f) { return (int)f * 2; });
+  daily::future<int> f2 = f.then([](float f) { return static_cast<int>(f) * 2; });
   BOOST_TEST_CHECK(f2.valid() == true);
   BOOST_TEST_CHECK(f.valid() == false);
   daily::future<short> f3 = f2.then(daily::continue_on::get, [](int i) {
     throw std::logic_error("");
-    return (short)(i * 2);
+    return static_cast<short>(i * 2);
   });
   p.set_value(1.f);
 
@@ -382,13 +388,13 @@ BOOST_AUTO_TEST_CASE(promise_future_set_continuation_throws) {
   daily::future<float> f = p.get_future();
   daily::future<int> f2 = f.then(daily::continue_on::set, [](float f) {
     throw std::logic_error("");
-    return (int)f * 2;
+    return static_cast<int>(f) * 2;
   });
 
   BOOST_TEST_CHECK(f2.valid() == true);
   BOOST_TEST_CHECK(f.valid() == false);
-  daily::future<short> f3 = f2.then(daily::continue_on::get, [](int i) {
-    return (short)(i * 2);
+  daily::future<short> const f3 = f2.then(daily::continue_on::get, [](int i) {
+    return static_cast<short>(i * 2);
   });
 
   bool exception_caught = false;
@@ -415,7 +421,7 @@ BOOST_AUTO_TEST_CASE(future_wait) {
 BOOST_AUTO_TEST_CASE(discard_future) {
   daily::promise<void> promise;
   bool ran = false;
-  promise.get_future().then([&ran]() { ran = true; });
+  promise.get_future().then([&ran] { ran = true; });
   promise.set_value();
   BOOST_TEST_CHECK(ran == true);
 }
@@ -434,14 +440,14 @@ BOOST_AUTO_TEST_CASE(discard_promise) {
 }
 
 BOOST_AUTO_TEST_CASE(discard_both) {
-  daily::promise<void>().get_future().then([]() {});
+  daily::promise<void>().get_future().then([] {});
 }
 
 BOOST_AUTO_TEST_CASE(set_before_get) {
   daily::promise<void> promise;
   promise.set_value();
   bool ran = false;
-  promise.get_future().then([&ran]() { ran = true; });
+  promise.get_future().then([&ran] { ran = true; });
   BOOST_TEST_CHECK(ran == true);
 }
 
@@ -450,7 +456,7 @@ struct MovableFunctor {
       : a(new int(5)) {
   }
 
-  int operator()() {
+  int operator()() const {
     return *a;
   }
 
@@ -537,7 +543,7 @@ BOOST_AUTO_TEST_CASE(broken_promise_propagates_through_continuation) {
 
 BOOST_AUTO_TEST_CASE(wait_for_times_out) {
   daily::promise<int> p;
-  daily::future<int> f = p.get_future();
+  daily::future<int> const f = p.get_future();
   BOOST_TEST_CHECK(
       (f.wait_for(std::chrono::milliseconds(1)) == daily::future_status::timeout));
   p.set_value(1);

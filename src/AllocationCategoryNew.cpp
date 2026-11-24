@@ -88,16 +88,13 @@ void deallocate(void* p, std::size_t align) noexcept {
   Header const* h = header_of(p);
   daily::detail::add_heap_bytes(h->category, -static_cast<std::int64_t>(h->size));
   void* base = static_cast<std::byte*>(p) - header_space(align);
-  if(align <= kHeaderSpace) {
-    std::free(base);
-  }
-  else {
 #ifdef _WIN32
+  if(align > kHeaderSpace) {
     _aligned_free(base);
-#else
-    std::free(base);
-#endif
+    return;
   }
+#endif
+  std::free(base);
 }
 
 // Calls the new handler until the allocation succeeds, as the standard's

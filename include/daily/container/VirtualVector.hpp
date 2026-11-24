@@ -53,7 +53,7 @@ class VirtualVector : boost::noncopyable {
 
   // Growing commits at least this much at a time, so that a growing vector
   // rarely calls into the system.
-  static constexpr std::size_t kMinCommit = std::size_t(2) << 20;
+  static constexpr std::size_t kMinCommit = std::size_t{2} << 20;
 
   VirtualVector() = default;
 

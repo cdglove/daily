@@ -33,7 +33,7 @@ float get_one() {
 template <typename Executor, typename CompletionToken>
 auto async_get_one(Executor ex, CompletionToken&& token) {
   return boost::asio::async_initiate<CompletionToken, void(float)>(
-      [](auto handler, Executor ex) {
+      [](auto handler, Executor const& ex) {
         boost::asio::dispatch(ex, [handler = std::move(handler)]() mutable {
           std::move(handler)(get_one());
         });
@@ -116,8 +116,9 @@ BOOST_AUTO_TEST_CASE(future_use_future_stress) {
 
     f.then(daily::execute::dispatch, pool, [&result](float f) {
       auto current = result.load();
-      while(!result.compare_exchange_weak(current, current - f))
+      while(!result.compare_exchange_weak(current, current - f)) {
         ;
+      }
     });
   }
 

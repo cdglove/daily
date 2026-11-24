@@ -79,6 +79,8 @@ class TieredSequence {
 
     template <bool Other>
       requires(Const && !Other)
+    // An iterator converts to a const_iterator.
+    // NOLINTNEXTLINE(misc-explicit-constructor)
     Iter(Iter<Other> const& other)
         : owner_(other.owner_)
         , i_(other.i_)
@@ -128,7 +130,7 @@ class TieredSequence {
     }
     Iter& operator+=(difference_type n) {
       i_ += n;
-      if(n >= 0 && static_cast<size_type>(n) < left_) {
+      if(n >= 0 && std::cmp_less(n, left_)) {
         cur_ += n;
         left_ -= static_cast<size_type>(n);
       }
@@ -278,7 +280,7 @@ class TieredSequence {
     buf_.reserve((remaining + M) >> S);
     while(remaining != 0) {
       auto const n = std::min(remaining, K);
-      auto seg = make_segment();
+      auto const seg = make_segment();
       for(size_type i = 0; i < n; ++i, ++first) {
         seg.data[i] = *first;
       }
@@ -486,8 +488,8 @@ class TieredSequence {
   // backward copies move up, so overlapping ranges are fine.
   void copy_forward(size_type dst, size_type src, size_type n) {
     while(n != 0) {
-      auto& d = segs_[dst >> S];
-      auto& e = segs_[src >> S];
+      auto const& d = segs_[dst >> S];
+      auto const& e = segs_[src >> S];
       auto const dp = (d.head + (dst & M)) & M;
       auto const sp = (e.head + (src & M)) & M;
       auto const chunk = std::min(
@@ -508,8 +510,8 @@ class TieredSequence {
     auto dst_end = dst + n;
     auto src_end = src + n;
     while(n != 0) {
-      auto& d = segs_[(dst_end - 1) >> S];
-      auto& e = segs_[(src_end - 1) >> S];
+      auto const& d = segs_[(dst_end - 1) >> S];
+      auto const& e = segs_[(src_end - 1) >> S];
       auto const dp = (d.head + ((dst_end - 1) & M)) & M;
       auto const sp = (e.head + ((src_end - 1) & M)) & M;
       auto const chunk = std::min(
@@ -538,6 +540,8 @@ class TieredSequence {
       auto const sp = (src.head + from) & M;
       auto const chunk = std::min({n, K - dp, K - sp});
       if constexpr(std::is_trivially_copyable_v<T>) {
+        // Copies elements, which may be pointers.
+        // NOLINTNEXTLINE(bugprone-bitwise-pointer-cast)
         std::memcpy(dst.data + dp, src.data + sp, chunk * sizeof(T));
       }
       else {
@@ -551,10 +555,10 @@ class TieredSequence {
 
   void write(size_type v, T* items, size_type n) {
     while(n != 0) {
-      auto& d = segs_[v >> S];
+      auto const& d = segs_[v >> S];
       auto const dp = (d.head + (v & M)) & M;
       auto const chunk = std::min({n, K - dp, K - (v & M)});
-      std::move(items, items + chunk, d.data + dp);
+      std::ranges::move(items, items + chunk, d.data + dp);
       v += chunk;
       items += chunk;
       n -= chunk;
@@ -756,7 +760,8 @@ class TieredSequence {
 
   Segment make_segment() {
     auto const offset = (next_color_++ % kColors) * kLine;
-    return {new T[K + kColors * kLine] + offset, 0, static_cast<std::uint32_t>(offset)};
+    T* const block = new T[K + kColors * kLine];
+    return {block + offset, 0, static_cast<std::uint32_t>(offset)};
   }
 
   static void free_segment(Segment& seg) {
@@ -836,22 +841,18 @@ class TieredSequence {
       std::swap(carry, next.data[next.head]);
     }
 
-    bool have_carry = true;
     if(s < last) {
       auto& tail = segs_[last];
       tail.head = (tail.head - 1) & M;
       if(last_count < K) {
         tail.data[tail.head] = std::move(carry);
-        have_carry = false;
+        ++size_;
+        return;
       }
-      else {
-        std::swap(carry, tail.data[tail.head]);
-      }
+      std::swap(carry, tail.data[tail.head]);
     }
-    if(have_carry) {
-      append_segment(make_segment());
-      slot(segs_[nseg_ - 1], 0) = std::move(carry);
-    }
+    append_segment(make_segment());
+    slot(segs_[nseg_ - 1], 0) = std::move(carry);
     ++size_;
   }
 

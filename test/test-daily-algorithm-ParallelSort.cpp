@@ -41,7 +41,7 @@ class ThreadPool {
 
   ~ThreadPool() {
     {
-      std::lock_guard<std::mutex> lock(mutex_);
+      std::scoped_lock lock(mutex_);
       stopping_ = true;
     }
     ready_.notify_all();
@@ -52,7 +52,7 @@ class ThreadPool {
 
   void submit(std::function<void()> task) {
     {
-      std::lock_guard<std::mutex> lock(mutex_);
+      std::scoped_lock lock(mutex_);
       tasks_.push_back(std::move(task));
     }
     ready_.notify_one();
@@ -121,7 +121,7 @@ std::vector<std::string> random_strings(std::size_t count, std::mt19937& rng) {
 // algorithm can hit on this machine. A chunk size of one makes the small
 // sizes take the parallel path.
 std::size_t max_exhaustive_size() {
-  return std::max(1u, std::thread::hardware_concurrency()) * 16;
+  return std::size_t{std::max(1u, std::thread::hardware_concurrency())} * 16;
 }
 
 template <typename Executor, typename Compare, typename MakeValues = decltype(&random_values)>
@@ -135,7 +135,7 @@ void check_sizes(Executor& executor, Compare compare, MakeValues make_values = &
   sizes.push_back(100000);
 
   daily::detail::ParallelSorter<Executor> sorter(executor, 1);
-  for(auto size : sizes) {
+  for(auto const size : sizes) {
     auto values = make_values(size, rng);
     auto expected = values;
     std::sort(expected.begin(), expected.end(), compare);
@@ -164,7 +164,7 @@ BOOST_AUTO_TEST_CASE(sorts_with_default_chunk_size) {
   for(std::size_t size : {0, 1, 8191, 8192, 8193, 100000, 1000000}) {
     auto values = random_values(size, rng);
     auto expected = values;
-    std::sort(expected.begin(), expected.end());
+    std::ranges::sort(expected);
     daily::parallel_sort(pool, values.begin(), values.end(), std::less<>{});
     BOOST_TEST_INFO("size " << size);
     BOOST_TEST(values == expected, boost::test_tools::per_element());
@@ -211,7 +211,7 @@ BOOST_AUTO_TEST_CASE(
   std::mt19937 rng(42);
   auto values = random_values(100000, rng);
   auto expected = values;
-  std::sort(expected.begin(), expected.end());
+  std::ranges::sort(expected);
 
   std::promise<void> finished;
   pool.submit([&] {

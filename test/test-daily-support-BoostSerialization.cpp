@@ -66,7 +66,7 @@ BOOST_AUTO_TEST_CASE(round_trips_values_and_no_value) {
 
 BOOST_AUTO_TEST_CASE(written_as_plain_values) {
   // Without class information or tracking, each is just its value.
-  daily::compact_optional_max<std::uint64_t> value = 7;
+  daily::compact_optional_max<std::uint64_t> const value = 7;
   std::stringstream wire;
   {
     boost::archive::binary_oarchive out(wire, boost::archive::no_header);

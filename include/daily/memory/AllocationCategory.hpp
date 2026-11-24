@@ -50,6 +50,9 @@ inline constexpr std::size_t kAllocationCategoryCount = 256;
 // category unchanged.
 inline constexpr std::size_t kAllocationCategoryDepth = 63;
 
+// The memory charged to a category, in bytes. Memory is given back to the
+// category it was charged to when it's freed, whichever category is current
+// then.
 struct AllocationCategoryUsage {
   std::int64_t heap = 0;
   std::int64_t committed = 0;
@@ -67,8 +70,10 @@ class AllocationCategoryScope {
   AllocationCategoryScope& operator=(AllocationCategoryScope const&) = delete;
 };
 
+// The category on top of the calling thread's stack.
 AllocationCategory current_allocation_category();
 
+// The memory charged to category so far, by every thread.
 AllocationCategoryUsage allocation_category_usage(AllocationCategory category);
 
 namespace detail {
@@ -78,6 +83,7 @@ void add_committed_bytes(AllocationCategory category, std::int64_t bytes);
 
 #else
 
+// The same, doing nothing, for builds without memory categories.
 class AllocationCategoryScope {
  public:
   explicit AllocationCategoryScope(AllocationCategory /* category */) {

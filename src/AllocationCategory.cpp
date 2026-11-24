@@ -15,6 +15,7 @@
 
 #if DAILY_MEMORY_CATEGORIES
 
+#  include <array>
 #  include <atomic>
 #  include <boost/assert.hpp>
 
@@ -26,15 +27,16 @@ namespace {
 // stack so that pops still match pushes.
 struct CategoryStack {
   std::uint8_t depth;
-  AllocationCategory stack[kAllocationCategoryDepth];
+  std::array<AllocationCategory, kAllocationCategoryDepth> stack;
 };
 static_assert(sizeof(CategoryStack) == 64);
 
 constinit thread_local CategoryStack t_categories = {};
 
 // Constant initialised so allocations made before main are counted.
-constinit std::atomic<std::int64_t> g_heap_bytes[kAllocationCategoryCount] = {};
-constinit std::atomic<std::int64_t> g_committed_bytes[kAllocationCategoryCount] = {};
+constinit std::array<std::atomic<std::int64_t>, kAllocationCategoryCount> g_heap_bytes = {};
+constinit std::array<std::atomic<std::int64_t>, kAllocationCategoryCount>
+    g_committed_bytes = {};
 
 } // namespace
 
@@ -67,8 +69,8 @@ AllocationCategory current_allocation_category() {
 
 AllocationCategoryUsage allocation_category_usage(AllocationCategory category) {
   return {
-      g_heap_bytes[category].load(std::memory_order_relaxed),
-      g_committed_bytes[category].load(std::memory_order_relaxed)};
+      .heap = g_heap_bytes[category].load(std::memory_order_relaxed),
+      .committed = g_committed_bytes[category].load(std::memory_order_relaxed)};
 }
 
 namespace detail {

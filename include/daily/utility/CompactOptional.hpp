@@ -44,15 +44,21 @@ class compact_optional {
   constexpr compact_optional() noexcept
       : value_(Sentinel) {
   }
+  // Converts implicitly, as std::optional does.
+  // NOLINTNEXTLINE(misc-explicit-constructor)
   constexpr compact_optional(std::nullopt_t) noexcept
       : value_(Sentinel) {
   }
 
+  // Converts implicitly, as std::optional does.
+  // NOLINTNEXTLINE(misc-explicit-constructor)
   constexpr compact_optional(T const& value) noexcept(
       std::is_nothrow_copy_constructible_v<T>)
       : value_(value) {
   }
 
+  // Converts implicitly, as std::optional does.
+  // NOLINTNEXTLINE(misc-explicit-constructor)
   constexpr compact_optional(T&& value) noexcept(
       std::is_nothrow_move_constructible_v<T>)
       : value_(std::move(value)) {
@@ -238,10 +244,12 @@ class compact_optional {
       compact_optional<U, OtherSentinel> const& rhs) noexcept {
     bool const lhs_has = lhs.has_value();
     bool const rhs_has = rhs.has_value();
-    if(lhs_has != rhs_has)
+    if(lhs_has != rhs_has) {
       return false;
-    if(!lhs_has)
+    }
+    if(!lhs_has) {
       return true;
+    }
     return *lhs == *rhs;
   }
 
@@ -252,12 +260,15 @@ class compact_optional {
       compact_optional<U, OtherSentinel> const& rhs) {
     bool const lhs_has = lhs.has_value();
     bool const rhs_has = rhs.has_value();
-    if(!lhs_has && !rhs_has)
+    if(!lhs_has && !rhs_has) {
       return std::strong_ordering::equal;
-    if(!lhs_has)
+    }
+    if(!lhs_has) {
       return std::strong_ordering::less;
-    if(!rhs_has)
+    }
+    if(!rhs_has) {
       return std::strong_ordering::greater;
+    }
     return *lhs <=> *rhs;
   }
 

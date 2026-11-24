@@ -18,6 +18,7 @@
 #include "daily/detail/Prefetch.hpp"
 
 #include <algorithm>
+#include <array>
 #include <boost/assert.hpp>
 #include <boost/stl_interfaces/iterator_interface.hpp>
 #include <boost/stl_interfaces/sequence_container_interface.hpp>
@@ -91,7 +92,7 @@ class SegmentedSequence
     friend class iterator_impl<!IsConst>;
 
    public:
-    using difference_type = typename base_type::difference_type;
+    using difference_type = base_type::difference_type;
 
     iterator_impl() = default;
     iterator_impl(container_iterator c, segment_iterator i, owner_ptr owner)
@@ -101,8 +102,11 @@ class SegmentedSequence
       validate();
     }
 
-    template <bool OtherConst, std::enable_if_t<IsConst && !OtherConst, int> = 0>
+    template <bool OtherConst>
+    // An iterator converts to a const_iterator.
+    // NOLINTNEXTLINE(misc-explicit-constructor)
     iterator_impl(iterator_impl<OtherConst> const& other)
+      requires(IsConst && !OtherConst)
         : c_(other.c_)
         , i_(other.i_)
         , owner_(other.owner_) {
@@ -155,11 +159,10 @@ class SegmentedSequence
     // iterator_interface provides all of the comparisons, and != in terms
     // of ==, but implements the others by subtracting, which needs the
     // global index of both iterators. Comparing positions is cheaper.
-    // i_ is compared first because it differs on almost every comparison,
-    // while c_ is still checked in case the end of the last segment's
-    // allocation is adjacent in memory to the start of another segment.
+    // c_ is compared first because comparing iterators into different
+    // segments is undefined, and caught by checked iterators.
     bool operator==(iterator_impl const& other) const {
-      return i_ == other.i_ && c_ == other.c_;
+      return c_ == other.c_ && i_ == other.i_;
     }
 
     bool operator<(iterator_impl const& other) const {
@@ -195,7 +198,7 @@ class SegmentedSequence
         i_ += n;
       }
       else {
-        auto segment = static_cast<std::size_t>(
+        auto const segment = static_cast<std::size_t>(
             std::distance(owner_->t_.begin(), c_));
         seek(owner_->starts_[segment] + offset, segment);
       }
@@ -217,7 +220,8 @@ class SegmentedSequence
     }
 
     difference_type global_index() const {
-      auto segment = static_cast<std::size_t>(std::distance(owner_->t_.begin(), c_));
+      auto const segment = static_cast<std::size_t>(
+          std::distance(owner_->t_.begin(), c_));
       return static_cast<difference_type>(owner_->starts_[segment]) +
              std::distance(c_->begin(), i_);
     }
@@ -309,7 +313,9 @@ class SegmentedSequence
   SegmentedSequence(SegmentedSequence const& other) = default;
   SegmentedSequence& operator=(SegmentedSequence const& other) = default;
 
-  // Moving leaves other empty rather than without any segments.
+  // Moving leaves other empty rather than without any segments. Here that
+  // allocates a segment for other, so if it fails the program terminates.
+  // NOLINTNEXTLINE(bugprone-exception-escape)
   SegmentedSequence(SegmentedSequence&& other) noexcept
       : t_(std::move(other.t_))
       , starts_(std::move(other.starts_))
@@ -317,11 +323,19 @@ class SegmentedSequence
     other.clear();
   }
 
+  // Gives other this one's segments, which are never empty, and empties
+  // them down to one without allocating.
   SegmentedSequence& operator=(SegmentedSequence&& other) noexcept {
-    t_ = std::move(other.t_);
-    starts_ = std::move(other.starts_);
-    size_ = other.size_;
-    other.clear();
+    if(this != &other) {
+      std::swap(t_, other.t_);
+      std::swap(starts_, other.starts_);
+      std::swap(size_, other.size_);
+      other.t_.erase(other.t_.begin() + 1, other.t_.end());
+      other.t_.front().clear();
+      other.starts_.erase(other.starts_.begin() + 1, other.starts_.end());
+      other.starts_.front() = 0;
+      other.size_ = 0;
+    }
     return *this;
   }
 
@@ -412,9 +426,9 @@ class SegmentedSequence
     // Split segments so that first, middle and last each start a segment,
     // then rotate whole segments. Split from the back so that splitting
     // doesn't move the positions that are still to be split.
-    auto ifirst = iterator_to_index(first);
-    auto imiddle = iterator_to_index(middle);
-    auto ilast = iterator_to_index(last);
+    auto const ifirst = iterator_to_index(first);
+    auto const imiddle = iterator_to_index(middle);
+    auto const ilast = iterator_to_index(last);
 
     auto last_segment = split_before(ilast);
 
@@ -423,7 +437,7 @@ class SegmentedSequence
       ++last_segment;
     }
 
-    auto first_segment = split_before(ifirst);
+    auto const first_segment = split_before(ifirst);
     if(first_segment != ifirst.segment) {
       ++middle_segment;
       ++last_segment;
@@ -442,7 +456,7 @@ class SegmentedSequence
 
     // Splitting can leave small segments either side of each cut. Fix them
     // from the back so that merging doesn't move the segments still to fix.
-    std::size_t const cuts[] = {
+    std::array const cuts = {
         last_segment,
         last_segment - 1,
         result_segment,
@@ -720,7 +734,7 @@ class SegmentedSequence
       // a single new segment can be small. Fix them from the back so that
       // merging doesn't move the segments still to fix.
       auto const after = at + num_segments;
-      std::size_t const cuts[] = {after, after - 1, at, at == 0 ? 0 : at - 1};
+      std::array const cuts = {after, after - 1, at, at == 0 ? 0 : at - 1};
       for(auto s : cuts) {
         if(s < t_.size()) {
           fix_segment_size(s);
@@ -871,7 +885,7 @@ class SegmentedSequence
     if(starts_[guess] <= target) {
       lo = guess;
       while(true) {
-        auto probe = lo + step;
+        auto const probe = lo + step;
         if(probe >= starts_.size()) {
           hi = starts_.size();
           break;
@@ -892,7 +906,7 @@ class SegmentedSequence
           lo = 0;
           break;
         }
-        auto probe = hi - step;
+        auto const probe = hi - step;
         if(starts_[probe] <= target) {
           lo = probe;
           break;
@@ -914,7 +928,7 @@ class SegmentedSequence
   // access, kept simple so that the compiler vectorises them.
   void add_to_starts(std::size_t first, offset_type n) {
     auto* it = starts_.data() + first;
-    auto* const end = starts_.data() + starts_.size();
+    auto const* const end = starts_.data() + starts_.size();
     for(; it != end; ++it) {
       *it += n;
     }
@@ -922,7 +936,7 @@ class SegmentedSequence
 
   void subtract_from_starts(std::size_t first, offset_type n) {
     auto* it = starts_.data() + first;
-    auto* const end = starts_.data() + starts_.size();
+    auto const* const end = starts_.data() + starts_.size();
     for(; it != end; ++it) {
       *it -= n;
     }
@@ -1049,7 +1063,7 @@ class SegmentedSequence
   // copying whole chunks at a time when possible.
   template <typename Iterator>
   void append(Iterator begin, Iterator end) {
-    using category = typename std::iterator_traits<Iterator>::iterator_category;
+    using category = std::iterator_traits<Iterator>::iterator_category;
     if constexpr(std::is_base_of_v<std::random_access_iterator_tag, category>) {
       BOOST_ASSERT(size_ + std::distance(begin, end) <= kMaxSize);
       while(begin != end) {
@@ -1057,7 +1071,7 @@ class SegmentedSequence
           add_segment_at_end();
         }
         auto& segment = t_.back();
-        auto count = std::min<difference_type>(
+        auto const count = std::min<difference_type>(
             kSplitThreshold - segment.size(),
             std::distance(begin, end));
         reserve_for_insert(segment, static_cast<std::size_t>(count));
@@ -1143,7 +1157,7 @@ class SegmentedSequence
     }
 
     // Segments in the range are never empty.
-    auto container = partition_point(
+    auto const container = partition_point(
         begin.c_,
         end.c_,
         [&pred](std::vector<T> const& segment) { return pred(segment.back()); },
@@ -1177,7 +1191,7 @@ class SegmentedSequence
     auto const middle = seg.begin() + static_cast<difference_type>(half);
     auto const pos_it = seg.begin() + offset;
 
-    if(static_cast<std::size_t>(offset) < half) {
+    if(std::cmp_less(offset, half)) {
       auto target = make_segment(
           std::make_move_iterator(middle),
           std::make_move_iterator(seg.end()));
@@ -1206,34 +1220,32 @@ class SegmentedSequence
       auto const c = t_.begin() + static_cast<difference_type>(segment);
       return iterator(c, c->begin() + offset, this);
     }
-    else {
-      auto const tail_offset = offset - static_cast<difference_type>(half);
-      std::vector<T> target;
-      target.reserve(capacity_for(kSplitThreshold - half));
-      reserve_for_insert(target, kSplitThreshold - half + 1);
-      target.insert(
-          target.end(),
-          std::make_move_iterator(middle),
-          std::make_move_iterator(pos_it));
-      target.push_back(std::move(value));
-      target.insert(
-          target.end(),
-          std::make_move_iterator(pos_it),
-          std::make_move_iterator(seg.end()));
-      seg = make_segment(
-          std::make_move_iterator(seg.begin()),
-          std::make_move_iterator(middle));
+    auto const tail_offset = offset - static_cast<difference_type>(half);
+    std::vector<T> target;
+    target.reserve(capacity_for(kSplitThreshold - half));
+    reserve_for_insert(target, kSplitThreshold - half + 1);
+    target.insert(
+        target.end(),
+        std::make_move_iterator(middle),
+        std::make_move_iterator(pos_it));
+    target.push_back(std::move(value));
+    target.insert(
+        target.end(),
+        std::make_move_iterator(pos_it),
+        std::make_move_iterator(seg.end()));
+    seg = make_segment(
+        std::make_move_iterator(seg.begin()),
+        std::make_move_iterator(middle));
 
-      starts_.insert(
-          starts_.begin() + static_cast<difference_type>(segment + 1),
-          starts_[segment] + static_cast<offset_type>(half));
-      auto const new_c = t_.insert(
-          t_.begin() + static_cast<difference_type>(segment + 1),
-          std::move(target));
-      ++size_;
-      add_to_starts(segment + 2, 1);
-      return iterator(new_c, new_c->begin() + tail_offset, this);
-    }
+    starts_.insert(
+        starts_.begin() + static_cast<difference_type>(segment + 1),
+        starts_[segment] + static_cast<offset_type>(half));
+    auto const new_c = t_.insert(
+        t_.begin() + static_cast<difference_type>(segment + 1),
+        std::move(target));
+    ++size_;
+    add_to_starts(segment + 2, 1);
+    return iterator(new_c, new_c->begin() + tail_offset, this);
   }
 
   // Keeps segments at least kMergeThreshold long, other than the last
@@ -1323,7 +1335,7 @@ class SegmentedSequence
   iterator iterator_at(difference_type index, std::size_t hint) {
     BOOST_ASSERT(index >= 0);
     BOOST_ASSERT(index <= static_cast<difference_type>(size_));
-    if(index == static_cast<difference_type>(size_)) {
+    if(std::cmp_equal(index, size_)) {
       return end();
     }
     auto const segment = find_segment(index, hint);
@@ -1384,8 +1396,8 @@ class SegmentedSequence
 
   // Merges from into its neighbour to, which keeps its start.
   void move_contents_from_and_erase(
-      typename std::vector<std::vector<T>>::iterator from,
-      typename std::vector<std::vector<T>>::iterator to) {
+      std::vector<std::vector<T>>::iterator from,
+      std::vector<std::vector<T>>::iterator to) {
     auto const combined = to->size() + from->size();
     if(combined <= to->capacity() && combined >= to->capacity() / 2) {
       // There's room, so only from needs copying. Erasing a range can leave
@@ -1431,7 +1443,7 @@ class SegmentedSequence
   std::vector<std::vector<T>> t_;
   // starts_[s] is the index of the first element of segment s.
   std::vector<offset_type> starts_;
-  std::size_t size_;
+  std::size_t size_ = 0;
 };
 
 } // namespace daily

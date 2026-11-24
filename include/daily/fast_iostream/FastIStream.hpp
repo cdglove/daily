@@ -23,6 +23,9 @@
 
 namespace daily {
 
+// Wraps an input stream and reads numbers straight from its stream buffer,
+// skipping the locale and the stream's formatting flags. Anything else is
+// read by the stream. The counterpart of FastOStream.
 template <typename Stream>
 class FastIStream {
  public:

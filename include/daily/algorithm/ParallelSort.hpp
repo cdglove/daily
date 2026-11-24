@@ -24,7 +24,6 @@
 #include <iterator>
 #include <memory>
 #include <mutex>
-#include <ranges>
 #include <thread>
 #include <type_traits>
 #include <utility>
@@ -47,7 +46,7 @@ class TaskGroup {
   template <typename Executor, typename Fn>
   void submit(Executor& executor, Fn fn) {
     {
-      std::lock_guard<std::mutex> lock(state_->mutex);
+      std::scoped_lock lock(state_->mutex);
       state_->queue.emplace_back(std::move(fn));
       ++state_->pending;
     }
@@ -55,8 +54,8 @@ class TaskGroup {
     try {
       executor.submit([state = state_] { state->run_next(); });
     }
+    // NOLINTNEXTLINE(bugprone-empty-catch): left in the queue for wait()
     catch(...) {
-      // Left in the queue for wait().
     }
   }
 
@@ -85,7 +84,7 @@ class TaskGroup {
     bool run_next() {
       std::function<void()> task;
       {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::scoped_lock const lock(mutex);
         if(queue.empty()) {
           return false;
         }
@@ -95,7 +94,7 @@ class TaskGroup {
 
       run(task);
 
-      std::lock_guard<std::mutex> lock(mutex);
+      std::scoped_lock lock(mutex);
       if(--pending == 0) {
         done.notify_all();
       }
@@ -108,7 +107,7 @@ class TaskGroup {
         fn();
       }
       catch(...) {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::scoped_lock lock(mutex);
         if(!error) {
           error = std::current_exception();
         }
@@ -178,12 +177,12 @@ class ParallelSorter {
         "scratch buffer.");
 
     Iterator last = std::ranges::next(begin, end);
-    Difference size = last - begin;
+    Difference const size = last - begin;
 
     // hardware_concurrency() returns 0 when it can't be determined.
-    auto threads = static_cast<Difference>(
+    auto const threads = static_cast<Difference>(
         std::max(1u, std::thread::hardware_concurrency()));
-    Difference num_chunks = std::min(
+    Difference const num_chunks = std::min(
         threads,
         size / static_cast<Difference>(min_chunk_size_));
     if(num_chunks < 2) {
@@ -210,8 +209,8 @@ class ParallelSorter {
     TaskGroup tasks;
 
     for(Difference i = 0; i < num_chunks; ++i) {
-      Difference chunk_begin = runs[static_cast<std::size_t>(i)];
-      Difference chunk_end = runs[static_cast<std::size_t>(i) + 1];
+      Difference const chunk_begin = runs[static_cast<std::size_t>(i)];
+      Difference const chunk_end = runs[static_cast<std::size_t>(i) + 1];
       tasks.submit(workers_, [=, &buffer, &compare] {
         if(in_buffer) {
           auto out = buffer.begin() + chunk_begin;
@@ -253,7 +252,7 @@ class ParallelSorter {
     // Split each merge in proportion to its share of the range so the round
     // has about this many equally sized pieces in total.
     Difference const round_pieces = threads * 2;
-    auto pieces_for = [&](Difference count) {
+    auto const pieces_for = [&](Difference count) {
       return std::clamp<Difference>((count * round_pieces + size - 1) / size, 1, count);
     };
 
@@ -268,8 +267,8 @@ class ParallelSorter {
       Difference last = runs[run + 2];
       Difference count = last - first;
       Difference pieces = pieces_for(count);
-      auto a = source + first;
-      auto b = source + middle;
+      auto const a = source + first;
+      auto const b = source + middle;
       Difference a_size = middle - first;
       Difference b_size = last - middle;
 
@@ -327,6 +326,10 @@ class ParallelSorter {
 };
 } // namespace detail
 
+// Sorts [begin, end) by compare, splitting the work into tasks for executor,
+// which is anything with submit(std::function<void()>). The calling thread
+// takes part. As with std::sort, equivalent elements can end up in any
+// order, as the chunks are sorted with it.
 template <typename Executor, typename Iterator, typename Sentinel, typename Compare>
 void parallel_sort(Executor& executor, Iterator begin, Sentinel end, Compare&& compare) {
   detail::ParallelSorter<Executor> sorter(executor);

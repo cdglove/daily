@@ -90,6 +90,8 @@ BOOST_AUTO_TEST_CASE(chained) {
 
 BOOST_AUTO_TEST_CASE(string_types) {
   BOOST_TEST(fast_format(std::string_view("view")) == "view");
+  // An array of signed char is what this formats.
+  // NOLINTNEXTLINE(modernize-avoid-c-arrays)
   signed char const s[] = "signed";
   BOOST_TEST(fast_format(s) == "signed");
   BOOST_TEST(fast_format(static_cast<unsigned char>('u')) == "u");
@@ -186,7 +188,13 @@ BOOST_AUTO_TEST_CASE(reals_keep_precision) {
   fast >> d >> ld >> f;
   BOOST_TEST(!in.fail());
   BOOST_TEST(d == 0.1);
+#ifdef __MINGW32__
+  // MinGW's long double is wider than double, but its C runtime parses long
+  // doubles at double precision.
+  BOOST_TEST(ld == static_cast<long double>(0.1));
+#else
   BOOST_TEST(ld == 0.1L);
+#endif
   BOOST_TEST(f == 2.5f);
 }
 

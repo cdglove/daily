@@ -12,39 +12,44 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-# General purpose utilities with no knowledge of fission or fsdb. Each
-# component is its own target so consumers only pull in what they use. Keep
-# this project self contained (dependencies via find_package only) so it can
-# move to its own repository.
+# General purpose utilities. Each component is its own target, so a project
+# only pulls in what it uses.
+#
+# Built on its own, this downloads Boost and Google Benchmark, and builds its
+# tests and benchmarks. Included in another project, such as with
+# FetchContent, it finds Boost through find_package, from the project, and
+# leaves the tests and benchmarks out unless DAILY_BUILD_TESTING or
+# DAILY_BUILD_BENCHMARKS is set.
 cmake_minimum_required(VERSION 3.25)
 
 project(daily LANGUAGES CXX)
 
-include(FetchContent)
-FetchContent_Declare(
-  Boost
-  SYSTEM 
-  OVERRIDE_FIND_PACKAGE 
-  EXCLUDE_FROM_ALL
-  URL https://github.com/boostorg/boost/releases/download/boost-1.92.0/boost-1.92.0-cmake.tar.xz
-  URL_HASH MD5=542f895860ceb7a99c9aa4d02f6073c8
-  DOWNLOAD_EXTRACT_TIMESTAMP True)
+if(PROJECT_IS_TOP_LEVEL)
+  set(CMAKE_CXX_STANDARD 20)
+  include(FetchContent)
+  FetchContent_Declare(
+    Boost
+    SYSTEM
+    OVERRIDE_FIND_PACKAGE
+    EXCLUDE_FROM_ALL
+    URL https://github.com/boostorg/boost/releases/download/boost-1.92.0/boost-1.92.0-cmake.tar.xz
+    URL_HASH MD5=542f895860ceb7a99c9aa4d02f6073c8
+    DOWNLOAD_EXTRACT_TIMESTAMP True)
+  FetchContent_MakeAvailable(Boost)
 
-FetchContent_MakeAvailable(Boost)
-
-set(BENCHMARK_ENABLE_TESTING
-    OFF
-    CACHE BOOL "" FORCE)
-FetchContent_Declare(
-  benchmark
-  SYSTEM
-  OVERRIDE_FIND_PACKAGE 
-  EXCLUDE_FROM_ALL
-  URL https://github.com/google/benchmark/archive/refs/tags/v1.10.0.tar.gz
-  URL_HASH MD5=046d7d6b9a11db09693af9ea2a8c7a82
-  USES_TERMINAL_DOWNLOAD TRUE)
-
-FetchContent_MakeAvailable(benchmark)
+  set(BENCHMARK_ENABLE_TESTING
+      OFF
+      CACHE BOOL "" FORCE)
+  FetchContent_Declare(
+    benchmark
+    SYSTEM
+    OVERRIDE_FIND_PACKAGE
+    EXCLUDE_FROM_ALL
+    URL https://github.com/google/benchmark/archive/refs/tags/v1.10.0.tar.gz
+    URL_HASH MD5=046d7d6b9a11db09693af9ea2a8c7a82
+    USES_TERMINAL_DOWNLOAD TRUE)
+  FetchContent_MakeAvailable(benchmark)
+endif()
 
 # Algorithms
 add_library(daily_algorithm INTERFACE)
@@ -114,7 +119,12 @@ target_sources(daily_container
 
 target_compile_features(daily_container INTERFACE cxx_std_20)
 
-target_link_libraries(daily_container INTERFACE Boost::headers Boost::stl_interfaces daily::memory)
+target_link_libraries(daily_container
+  INTERFACE
+    Boost::headers
+    Boost::stl_interfaces
+    daily::memory
+)
 
 # Utility
 add_library(daily_utility INTERFACE)
@@ -193,9 +203,9 @@ target_sources(daily_trace
 
 target_compile_features(daily_trace PUBLIC cxx_std_20)
 
-include(CTest)
-option(DAILY_BUILD_TESTING "Build daily tests" ON)
-if(BUILD_TESTING OR DAILY_BUILD_TESTING)
+option(DAILY_BUILD_TESTING "Build daily tests" ${PROJECT_IS_TOP_LEVEL})
+if(DAILY_BUILD_TESTING)
+  include(CTest)
   find_package(Boost REQUIRED unit_test_framework serialization)
 
   add_executable(
@@ -259,7 +269,7 @@ if(BUILD_TESTING OR DAILY_BUILD_TESTING)
   add_test(NAME test-daily-trace-fast-log COMMAND test-daily-trace-fast-log)
 endif()
 
-option(DAILY_BUILD_BENCHMARKS "Build daily benchmarks" ON)
+option(DAILY_BUILD_BENCHMARKS "Build daily benchmarks" ${PROJECT_IS_TOP_LEVEL})
 if(DAILY_BUILD_BENCHMARKS)
   find_package(benchmark REQUIRED)
 

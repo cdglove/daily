@@ -20,7 +20,7 @@
 #include "daily/memory/VirtualMemory.hpp"
 
 namespace {
-constexpr std::size_t kGiB = std::size_t(1) << 30;
+constexpr std::size_t kGiB = std::size_t{1} << 30;
 }
 
 BOOST_AUTO_TEST_CASE(VirtualMemory_page_size_is_a_power_of_two) {
@@ -54,7 +54,7 @@ BOOST_AUTO_TEST_CASE(VirtualMemory_rounds_size_up) {
 }
 
 BOOST_AUTO_TEST_CASE(VirtualMemory_regions_are_at_their_offsets) {
-  daily::VirtualMemory memory(128 * kGiB);
+  daily::VirtualMemory const memory(128 * kGiB);
   auto low = memory.region(0, 64 * kGiB);
   auto high = memory.region(64 * kGiB, 64 * kGiB);
   BOOST_TEST(low.data() == memory.data());
@@ -64,8 +64,8 @@ BOOST_AUTO_TEST_CASE(VirtualMemory_regions_are_at_their_offsets) {
 
 BOOST_AUTO_TEST_CASE(VirtualRegion_commit_keeps_contents) {
   std::size_t const page = daily::VirtualMemory::page_size();
-  daily::VirtualMemory memory(64 * kGiB);
-  auto region = memory.region();
+  daily::VirtualMemory const memory(64 * kGiB);
+  auto const region = memory.region();
 
   // Pages at both ends of the reservation can be committed separately.
   region.commit(0, page);
@@ -83,8 +83,8 @@ BOOST_AUTO_TEST_CASE(VirtualRegion_commit_keeps_contents) {
 
 BOOST_AUTO_TEST_CASE(VirtualRegion_decommit_discards_contents) {
   std::size_t const page = daily::VirtualMemory::page_size();
-  daily::VirtualMemory memory(4 * page);
-  auto region = memory.region();
+  daily::VirtualMemory const memory(4 * page);
+  auto const region = memory.region();
   region.commit(0, 4 * page);
   std::fill_n(region.data(), 4 * page, std::byte{7});
 
@@ -99,13 +99,14 @@ BOOST_AUTO_TEST_CASE(VirtualRegion_decommit_discards_contents) {
 BOOST_AUTO_TEST_CASE(VirtualMemory_move_keeps_addresses) {
   std::size_t const page = daily::VirtualMemory::page_size();
   daily::VirtualMemory memory(4 * page);
-  auto region = memory.region(page, page);
+  auto const region = memory.region(page, page);
   region.commit(0, page);
   region.data()[0] = std::byte{3};
 
   std::byte* const data = memory.data();
   daily::VirtualMemory moved(std::move(memory));
   BOOST_TEST(moved.data() == data);
+  // NOLINTNEXTLINE(bugprone-use-after-move): checks the moved-from state
   BOOST_TEST(memory.data() == nullptr);
   BOOST_TEST(memory.size() == 0u);
   BOOST_TEST(std::to_integer<int>(region.data()[0]) == 3);
@@ -113,6 +114,7 @@ BOOST_AUTO_TEST_CASE(VirtualMemory_move_keeps_addresses) {
   daily::VirtualMemory assigned;
   assigned = std::move(moved);
   BOOST_TEST(assigned.data() == data);
+  // NOLINTNEXTLINE(bugprone-use-after-move): checks the moved-from state
   BOOST_TEST(moved.data() == nullptr);
   BOOST_TEST(std::to_integer<int>(region.data()[0]) == 3);
 }

@@ -131,7 +131,7 @@ std::size_t VirtualMemory::page_size() {
 #ifdef _WIN32
   static std::size_t const size = system_info().dwPageSize;
 #else
-  static std::size_t const size = static_cast<std::size_t>(sysconf(_SC_PAGESIZE));
+  static auto const size = static_cast<std::size_t>(sysconf(_SC_PAGESIZE));
 #endif
   return size;
 }
@@ -181,7 +181,7 @@ VirtualRegion VirtualMemory::region(std::size_t offset, std::size_t bytes) const
   BOOST_ASSERT(offset % page_size() == 0);
   BOOST_ASSERT(bytes % page_size() == 0);
   BOOST_ASSERT(offset <= size_ && bytes <= size_ - offset);
-  return VirtualRegion(data_ + offset, bytes, category_);
+  return {data_ + offset, bytes, category_};
 }
 
 void VirtualMemory::release() {

@@ -25,7 +25,7 @@
 
 namespace {
 
-constexpr std::size_t kMiB = std::size_t(1) << 20;
+constexpr std::size_t kMiB = std::size_t{1} << 20;
 
 std::int64_t committed(daily::AllocationCategory category) {
   return daily::allocation_category_usage(category).committed;
@@ -51,7 +51,7 @@ BOOST_AUTO_TEST_CASE(AllocationCategory_is_zero_with_nothing_pushed) {
 
 BOOST_AUTO_TEST_CASE(AllocationCategory_scopes_nest) {
   {
-    daily::AllocationCategoryScope outer(10);
+    daily::AllocationCategoryScope const outer(10);
     BOOST_TEST(daily::current_allocation_category() == 10);
     {
       daily::AllocationCategoryScope inner(11);
@@ -82,7 +82,7 @@ BOOST_AUTO_TEST_CASE(AllocationCategory_charges_committed_pages_to_reservation) 
   std::size_t const page = daily::VirtualMemory::page_size();
   std::int64_t const before = committed(kCategory);
 
-  daily::VirtualMemory memory = [] {
+  daily::VirtualMemory const memory = [] {
     daily::AllocationCategoryScope scope(kCategory);
     return daily::VirtualMemory(64 * kMiB);
   }();
@@ -104,8 +104,8 @@ BOOST_AUTO_TEST_CASE(AllocationCategory_explicit_reservation_category_wins) {
   std::int64_t const scoped_before = committed(kScoped);
   std::int64_t const explicit_before = committed(kExplicit);
 
-  daily::AllocationCategoryScope scope(kScoped);
-  daily::VirtualMemory memory(64 * kMiB, kExplicit);
+  daily::AllocationCategoryScope const scope(kScoped);
+  daily::VirtualMemory const memory(64 * kMiB, kExplicit);
   memory.region().commit(0, page);
   BOOST_TEST(committed(kScoped) == scoped_before);
   BOOST_TEST(committed(kExplicit) - explicit_before == static_cast<std::int64_t>(page));

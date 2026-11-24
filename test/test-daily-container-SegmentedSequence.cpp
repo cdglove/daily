@@ -11,23 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#include <algorithm>
 #include <boost/test/unit_test.hpp>
 
-#include <algorithm>
 #include <array>
+#include <cstddef>
 #include <iterator>
 #include <list>
+#include <memory>
 #include <numeric>
 #include <random>
+#include <ranges>
 #include <sstream>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 #include "daily/container/SegmentedSequence.hpp"
 
 BOOST_AUTO_TEST_CASE(SegmentedSequence_Construction) {
   daily::SegmentedSequence<int> table;
   BOOST_TEST(table.empty());
-  BOOST_TEST(table.size() == 0);
+  BOOST_TEST(table.empty());
 }
 
 BOOST_AUTO_TEST_CASE(SegmentedSequence_PushBack) {
@@ -64,7 +68,7 @@ BOOST_AUTO_TEST_CASE(SegmentedSequence_Clear) {
 
   table.clear();
   BOOST_TEST(table.empty());
-  BOOST_TEST(table.size() == 0);
+  BOOST_TEST(table.empty());
 }
 
 BOOST_AUTO_TEST_CASE(SegmentedSequence_Iteration) {
@@ -192,6 +196,7 @@ BOOST_AUTO_TEST_CASE(SegmentedSequence_Move) {
   size_t original_size = table1.size();
 
   daily::SegmentedSequence<int> table2 = std::move(table1);
+  // NOLINTNEXTLINE(bugprone-use-after-move): checks the moved-from state
   BOOST_TEST(table1.empty());
   BOOST_TEST(table2.size() == original_size);
 
@@ -202,6 +207,7 @@ BOOST_AUTO_TEST_CASE(SegmentedSequence_Move) {
 
   daily::SegmentedSequence<int> table3;
   table3 = std::move(table2);
+  // NOLINTNEXTLINE(bugprone-use-after-move): checks the moved-from state
   BOOST_TEST(table2.empty());
   BOOST_TEST(table3.size() == original_size);
 
@@ -209,6 +215,35 @@ BOOST_AUTO_TEST_CASE(SegmentedSequence_Move) {
   for(auto& v : table3) {
     BOOST_TEST(v == i++);
   }
+}
+
+// Move assignment hands other the target's old segments. They have to be
+// emptied, releasing what they held, and leave other usable.
+BOOST_AUTO_TEST_CASE(SegmentedSequence_MoveAssignReleasesOldElements) {
+  using Table = daily::SegmentedSequence<std::shared_ptr<int>>;
+  auto const old_value = std::make_shared<int>(1);
+  Table target;
+  for(int i = 0; i < Table::kSplitThreshold * 3; ++i) {
+    target.push_back(old_value);
+  }
+  BOOST_TEST_REQUIRE(old_value.use_count() > 1);
+
+  Table source;
+  source.push_back(std::make_shared<int>(2));
+  target = std::move(source);
+  BOOST_TEST(old_value.use_count() == 1);
+  BOOST_TEST(target.size() == 1u);
+  BOOST_TEST(*target[0] == 2);
+
+  // NOLINTNEXTLINE(bugprone-use-after-move): checks the moved-from state
+  BOOST_TEST(source.empty());
+  BOOST_TEST((source.begin() == source.end()));
+  for(int i = 0; i < Table::kSplitThreshold * 2; ++i) {
+    source.emplace(source.begin(), std::make_shared<int>(i));
+  }
+  BOOST_TEST(source.size() == static_cast<std::size_t>(Table::kSplitThreshold * 2));
+  BOOST_TEST(*source[0] == Table::kSplitThreshold * 2 - 1);
+  BOOST_TEST(*source[source.size() - 1] == 0);
 }
 
 BOOST_AUTO_TEST_SUITE(SegmentedSequence_SplitAndMerge)
@@ -234,7 +269,8 @@ BOOST_AUTO_TEST_CASE(SplitInMiddle) {
   }
   BOOST_TEST(*it == -1);
   ++it;
-  for(int i = table.size() / 2; i < daily::SegmentedSequence<int>::kSplitThreshold;
+  for(int i = static_cast<int>(table.size() / 2);
+      i < daily::SegmentedSequence<int>::kSplitThreshold;
       ++i, ++it) {
     BOOST_TEST(*it == i);
   }
@@ -264,8 +300,9 @@ BOOST_AUTO_TEST_CASE(MergeMiddle_MergeRight) {
   // 4. Erase elements from the middle segment to trigger a merge.
   // Middle segment size is kSplitThreshold / 2 + 1.
   // We need to bring it down to < kMergeThreshold.
-  int elements_to_erase = (daily::SegmentedSequence<int>::kSplitThreshold / 2 + 1) -
-                          (daily::SegmentedSequence<int>::kMergeThreshold - 1);
+  int const elements_to_erase =
+      (daily::SegmentedSequence<int>::kSplitThreshold / 2 + 1) -
+      (daily::SegmentedSequence<int>::kMergeThreshold - 1);
 
   it = table.begin();
   // advance to the beginning of the middle segment
@@ -284,6 +321,7 @@ BOOST_AUTO_TEST_CASE(MergeMiddle_MergeRight) {
   }
 
   std::vector<int> expected_values;
+  expected_values.reserve(daily::SegmentedSequence<int>::kSplitThreshold + 1);
   for(int i = 0; i < daily::SegmentedSequence<int>::kSplitThreshold; ++i) {
     expected_values.push_back(i);
   }
@@ -324,7 +362,8 @@ BOOST_AUTO_TEST_CASE(MergeMiddle_MergeLeft) {
   // 4. Grow the right-most segment so that it's larger than the left-most
   // segment. This will encourage a merge-left when the middle segment shrinks.
   for(int i = 0; i < daily::SegmentedSequence<int>::kSplitThreshold / 2 + 1; ++i) {
-    table.push_back(daily::SegmentedSequence<int>::kSplitThreshold + 1 + i);
+    table.push_back(
+        static_cast<int>(daily::SegmentedSequence<int>::kSplitThreshold + 1 + i));
   }
 
   const auto size_before_erase = table.size();
@@ -332,8 +371,9 @@ BOOST_AUTO_TEST_CASE(MergeMiddle_MergeLeft) {
   // 5. Erase elements from the middle segment to trigger a merge.
   // Middle segment size is kSplitThreshold / 2 + 1.
   // We need to bring it down to < kMergeThreshold.
-  int elements_to_erase = (daily::SegmentedSequence<int>::kSplitThreshold / 2 + 1) -
-                          (daily::SegmentedSequence<int>::kMergeThreshold - 1);
+  int const elements_to_erase =
+      (daily::SegmentedSequence<int>::kSplitThreshold / 2 + 1) -
+      (daily::SegmentedSequence<int>::kMergeThreshold - 1);
 
   it = table.begin();
   // advance to the beginning of the middle segment
@@ -352,6 +392,7 @@ BOOST_AUTO_TEST_CASE(MergeMiddle_MergeLeft) {
   }
 
   std::vector<int> expected_values;
+  expected_values.reserve(daily::SegmentedSequence<int>::kSplitThreshold + 1);
   for(int i = 0; i < daily::SegmentedSequence<int>::kSplitThreshold; ++i) {
     expected_values.push_back(i);
   }
@@ -361,7 +402,7 @@ BOOST_AUTO_TEST_CASE(MergeMiddle_MergeLeft) {
       -1);
   for(int i = 0; i < daily::SegmentedSequence<int>::kSplitThreshold / 2 + 1; ++i) {
     expected_values.push_back(
-        daily::SegmentedSequence<int>::kSplitThreshold + 1 + i);
+        static_cast<int>(daily::SegmentedSequence<int>::kSplitThreshold + 1 + i));
   }
 
   expected_values.erase(
@@ -389,8 +430,8 @@ BOOST_AUTO_TEST_CASE(MergeAtBeginning) {
 
   // Erase enough elements from the first segment to trigger a merge
   auto it = table.begin();
-  int erase_count = daily::SegmentedSequence<int>::kSplitThreshold -
-                    (daily::SegmentedSequence<int>::kMergeThreshold - 1);
+  int const erase_count = daily::SegmentedSequence<int>::kSplitThreshold -
+                          (daily::SegmentedSequence<int>::kMergeThreshold - 1);
   for(int i = 0; i < erase_count; ++i) {
     it = table.erase(it);
   }
@@ -458,7 +499,7 @@ void TestBounds(Container& table, std::vector<int>& reference) {
       }
     }
     if(reference.size() > 2) {
-      int mid_val = reference[reference.size() / 2];
+      int const mid_val = reference[reference.size() / 2];
       if(mid_val - 1 > reference.front()) {
         test_values.push_back(mid_val - 1);
       }
@@ -473,18 +514,18 @@ void TestBounds(Container& table, std::vector<int>& reference) {
     test_values.push_back(1);
   }
 
-  for(int v : test_values) {
+  for(int const v : test_values) {
     // Test lower_bound
-    auto it_table = table.lower_bound(table.begin(), table.end(), v, std::less<int>());
-    auto it_ref = std::lower_bound(reference.begin(), reference.end(), v);
+    auto it_table = table.lower_bound(table.begin(), table.end(), v, std::less<>());
+    auto it_ref = std::ranges::lower_bound(reference, v);
     BOOST_TEST_INFO("Testing lower_bound for value " << v);
     BOOST_TEST(
         std::distance(reference.begin(), it_ref) ==
         std::distance(table.begin(), it_table));
 
     // Test upper_bound
-    it_table = table.upper_bound(table.begin(), table.end(), v, std::less<int>());
-    it_ref = std::upper_bound(reference.begin(), reference.end(), v);
+    it_table = table.upper_bound(table.begin(), table.end(), v, std::less<>());
+    it_ref = std::ranges::upper_bound(reference, v);
     BOOST_TEST_INFO("Testing upper_bound for value " << v);
     BOOST_TEST(
         std::distance(reference.begin(), it_ref) ==
@@ -536,15 +577,18 @@ BOOST_AUTO_TEST_CASE(Bounds) {
   // second segment half full
   for(int i = 0; i < daily::SegmentedSequence<int>::kSplitThreshold / 2; ++i) {
     varied_segment_table.push_back(
-        daily::SegmentedSequence<int>::kSplitThreshold + i);
-    varied_segment_ref.push_back(daily::SegmentedSequence<int>::kSplitThreshold + i);
+        static_cast<int>(daily::SegmentedSequence<int>::kSplitThreshold + i));
+    varied_segment_ref.push_back(
+        static_cast<int>(daily::SegmentedSequence<int>::kSplitThreshold + i));
   }
   // third segment with a few elements
   for(int i = 0; i < 10; ++i) {
     varied_segment_table.push_back(
-        daily::SegmentedSequence<int>::kSplitThreshold * 3 / 2 + i);
+        static_cast<int>(
+            daily::SegmentedSequence<int>::kSplitThreshold * 3 / 2 + i));
     varied_segment_ref.push_back(
-        daily::SegmentedSequence<int>::kSplitThreshold * 3 / 2 + i);
+        static_cast<int>(
+            daily::SegmentedSequence<int>::kSplitThreshold * 3 / 2 + i));
   }
   TestBounds(varied_segment_table, varied_segment_ref);
   const auto& const_varied_segment_table = varied_segment_table;
@@ -568,14 +612,14 @@ BOOST_AUTO_TEST_CASE(BoundsOnSubrange) {
   auto end_it = table.begin();
   std::advance(end_it, daily::SegmentedSequence<int>::kSplitThreshold + 10);
 
-  auto ref_begin_it = reference.begin() + 10;
-  auto ref_end_it = reference.begin() +
-                    daily::SegmentedSequence<int>::kSplitThreshold + 10;
+  auto const ref_begin_it = reference.begin() + 10;
+  auto const ref_end_it = reference.begin() +
+                          daily::SegmentedSequence<int>::kSplitThreshold + 10;
 
   // Test a value that is within the first segment but before the sub-range start
-  int value_before_begin = 5;
+  int const value_before_begin = 5;
   auto it_table =
-      table.lower_bound(begin_it, end_it, value_before_begin, std::less<int>());
+      table.lower_bound(begin_it, end_it, value_before_begin, std::less<>());
   auto it_ref = std::lower_bound(ref_begin_it, ref_end_it, value_before_begin);
 
   BOOST_TEST_INFO(
@@ -587,8 +631,8 @@ BOOST_AUTO_TEST_CASE(BoundsOnSubrange) {
   BOOST_TEST(std::distance(table.begin(), it_table) == 10);
 
   // Test a value within the sub-range
-  int value_in_range = 20;
-  it_table = table.lower_bound(begin_it, end_it, value_in_range, std::less<int>());
+  int const value_in_range = 20;
+  it_table = table.lower_bound(begin_it, end_it, value_in_range, std::less<>());
   it_ref = std::lower_bound(ref_begin_it, ref_end_it, value_in_range);
   BOOST_TEST_INFO("Testing lower_bound on subrange for value in range");
   BOOST_TEST(
@@ -597,8 +641,8 @@ BOOST_AUTO_TEST_CASE(BoundsOnSubrange) {
 
   // Test a value that is within the last segment of the sub-range but after
   // the sub-range end
-  int value_after_end = daily::SegmentedSequence<int>::kSplitThreshold + 20;
-  it_table = table.lower_bound(begin_it, end_it, value_after_end, std::less<int>());
+  int const value_after_end = daily::SegmentedSequence<int>::kSplitThreshold + 20;
+  it_table = table.lower_bound(begin_it, end_it, value_after_end, std::less<>());
   it_ref = std::lower_bound(ref_begin_it, ref_end_it, value_after_end);
   BOOST_TEST_INFO(
       "Testing lower_bound on subrange for value after subrange end");
@@ -628,12 +672,12 @@ void TestRotate(int container_size, int first_idx, int middle_idx, int last_idx)
   auto last = table.begin();
   std::advance(last, last_idx);
 
-  auto ref_first = reference.begin() + first_idx;
-  auto ref_middle = reference.begin() + middle_idx;
-  auto ref_last = reference.begin() + last_idx;
+  auto const ref_first = reference.begin() + first_idx;
+  auto const ref_middle = reference.begin() + middle_idx;
+  auto const ref_last = reference.begin() + last_idx;
 
-  auto ret = table.rotate(first, middle, last);
-  auto ref_ret = std::rotate(ref_first, ref_middle, ref_last);
+  auto const ret = table.rotate(first, middle, last);
+  auto const ref_ret = std::rotate(ref_first, ref_middle, ref_last);
 
   BOOST_TEST_INFO(
       "Rotate test: size=" << container_size << ", first=" << first_idx
@@ -705,6 +749,7 @@ IntTable make_sequence(int count) {
 
 std::vector<int> make_reference(int count) {
   std::vector<int> reference;
+  reference.reserve(count);
   for(int i = 0; i < count; ++i) {
     reference.push_back(i);
   }
@@ -762,7 +807,7 @@ void check_contents(IntTable const& table, std::vector<int> const& reference) {
   // checks it was kept up to date.
   auto const begin = table.begin();
   for(std::size_t i = 0; i < reference.size(); ++i) {
-    auto it = begin + static_cast<std::ptrdiff_t>(i);
+    auto const it = begin + static_cast<std::ptrdiff_t>(i);
     if(*it != reference[i] || it - begin != static_cast<std::ptrdiff_t>(i)) {
       BOOST_ERROR(
           "Random access mismatch at index " << i << ": " << *it
@@ -796,7 +841,7 @@ BOOST_AUTO_TEST_CASE(ReverseIteratorsAcrossSegments) {
   auto table = make_sequence(count);
   auto reference = make_reference(count);
   BOOST_TEST(
-      std::equal(table.rbegin(), table.rend(), reference.rbegin(), reference.rend()));
+      std::ranges::equal(std::views::reverse(table), std::views::reverse(reference)));
 }
 
 BOOST_AUTO_TEST_CASE(DecrementFromSegmentStart) {
@@ -824,12 +869,12 @@ BOOST_AUTO_TEST_CASE(IncrementLastElementReachesEnd) {
 
 BOOST_AUTO_TEST_CASE(Comparisons) {
   auto table = make_sequence(kSplit * 2 + 7);
-  std::vector<int> indices =
+  std::vector<int> const indices =
       {0, 1, kSplit - 1, kSplit, kSplit + 1, kSplit * 2, kSplit * 2 + 6};
-  for(int a : indices) {
-    for(int b : indices) {
-      auto ia = iterator_at(table, a);
-      auto ib = iterator_at(table, b);
+  for(int const a : indices) {
+    for(int const b : indices) {
+      auto const ia = iterator_at(table, a);
+      auto const ib = iterator_at(table, b);
       BOOST_TEST_INFO("a=" << a << " b=" << b);
       BOOST_TEST((ia == ib) == (a == b));
       BOOST_TEST((ia != ib) == (a != b));
@@ -844,9 +889,10 @@ BOOST_AUTO_TEST_CASE(Comparisons) {
 BOOST_AUTO_TEST_CASE(Distance) {
   int const count = kSplit * 3 + 7;
   auto table = make_sequence(count);
-  std::vector<int> indices = {0, 1, kSplit - 1, kSplit, kSplit * 2 + 3, count - 1, count};
-  for(int a : indices) {
-    for(int b : indices) {
+  std::vector<int> const indices =
+      {0, 1, kSplit - 1, kSplit, kSplit * 2 + 3, count - 1, count};
+  for(int const a : indices) {
+    for(int const b : indices) {
       if(a > b) {
         continue;
       }
@@ -860,10 +906,10 @@ BOOST_AUTO_TEST_CASE(Distance) {
 BOOST_AUTO_TEST_CASE(AdvanceForward) {
   int const count = kSplit * 3 + 7;
   auto table = make_sequence(count);
-  std::vector<int> starts = {0, 5, kSplit - 1, kSplit, kSplit + 5};
-  std::vector<int> steps = {0, 1, 10, kSplit - 1, kSplit, kSplit + 1, kSplit * 2};
-  for(int start : starts) {
-    for(int step : steps) {
+  std::vector<int> const starts = {0, 5, kSplit - 1, kSplit, kSplit + 5};
+  std::vector<int> const steps = {0, 1, 10, kSplit - 1, kSplit, kSplit + 1, kSplit * 2};
+  for(int const start : starts) {
+    for(int const step : steps) {
       int target = start + step;
       if(target > count) {
         continue;
@@ -893,10 +939,10 @@ BOOST_AUTO_TEST_CASE(AdvanceToEnd) {
 BOOST_AUTO_TEST_CASE(AdvanceBackward) {
   int const count = kSplit * 3 + 7;
   auto table = make_sequence(count);
-  std::vector<int> starts = {count, count - 1, kSplit * 2, kSplit + 5, kSplit, 10};
-  std::vector<int> steps = {1, 5, 10, kSplit - 1, kSplit, kSplit + 1, kSplit * 2};
-  for(int start : starts) {
-    for(int step : steps) {
+  std::vector<int> const starts = {count, count - 1, kSplit * 2, kSplit + 5, kSplit, 10};
+  std::vector<int> const steps = {1, 5, 10, kSplit - 1, kSplit, kSplit + 1, kSplit * 2};
+  for(int const start : starts) {
+    for(int const step : steps) {
       int target = start - step;
       if(target < 0) {
         continue;
@@ -911,9 +957,9 @@ BOOST_AUTO_TEST_CASE(AdvanceBackward) {
 
 BOOST_AUTO_TEST_CASE(ConstIteratorConversion) {
   auto table = make_sequence(kSplit + 10);
-  IntTable::iterator it = iterator_at(table, kSplit + 2);
+  IntTable::iterator const it = iterator_at(table, kSplit + 2);
 
-  IntTable::const_iterator constructed(it);
+  IntTable::const_iterator const constructed(it);
   BOOST_TEST(*constructed == kSplit + 2);
 
   IntTable::const_iterator assigned = table.cbegin();
@@ -964,7 +1010,7 @@ BOOST_AUTO_TEST_CASE(ContainerInterface) {
   BOOST_TEST((table.cbegin() == ctable.begin()));
   BOOST_TEST(*table.crbegin() == kSplit);
   BOOST_TEST(
-      std::equal(table.crbegin(), table.crend(), reference.crbegin(), reference.crend()));
+      std::ranges::equal(std::views::reverse(table), std::views::reverse(reference)));
 
   // Inserting an element of a full segment, which moves when it splits.
   table.insert(iterator_at(table, 10), table[kSplit - 1]);
@@ -1067,9 +1113,9 @@ BOOST_AUTO_TEST_CASE(EraseLastElementAfterMergeLeftReturnsNext) {
 
   // Erase from the back of the middle segment until it merges.
   int middle_end = kSplit + 1;
-  int middle_begin = kSplit / 2;
+  int const middle_begin = kSplit / 2;
   while(middle_end - middle_begin >= kMerge - 1) {
-    auto it = table.erase(iterator_at(table, middle_end - 1));
+    auto const it = table.erase(iterator_at(table, middle_end - 1));
     reference.erase(reference.begin() + middle_end - 1);
     --middle_end;
     BOOST_TEST_INFO("middle_end=" << middle_end);
@@ -1159,11 +1205,11 @@ void TestRotateFull(int container_size, int first_idx, int middle_idx, int last_
   auto table = make_sequence(container_size);
   auto reference = make_reference(container_size);
 
-  auto ret = table.rotate(
+  auto const ret = table.rotate(
       iterator_at(table, first_idx),
       iterator_at(table, middle_idx),
       iterator_at(table, last_idx));
-  auto ref_ret = std::rotate(
+  auto const ref_ret = std::rotate(
       reference.begin() + first_idx,
       reference.begin() + middle_idx,
       reference.begin() + last_idx);
@@ -1227,7 +1273,7 @@ BOOST_AUTO_TEST_CASE(RepeatedRotations) {
         std::uniform_int_distribution<int>(0, count)(rng),
         std::uniform_int_distribution<int>(0, count)(rng),
         std::uniform_int_distribution<int>(0, count)(rng)};
-    std::sort(idx.begin(), idx.end());
+    std::ranges::sort(idx);
     table.rotate(
         iterator_at(table, idx[0]),
         iterator_at(table, idx[1]),
@@ -1236,7 +1282,7 @@ BOOST_AUTO_TEST_CASE(RepeatedRotations) {
         reference.begin() + idx[0],
         reference.begin() + idx[1],
         reference.begin() + idx[2]);
-    if(!std::equal(table.begin(), table.end(), reference.begin(), reference.end())) {
+    if(!std::ranges::equal(table, reference)) {
       BOOST_ERROR(
           "Mismatch after rotation " << i << " (" << idx[0] << ", " << idx[1]
                                      << ", " << idx[2] << ")");
@@ -1260,12 +1306,13 @@ BOOST_AUTO_TEST_CASE(SortedOperationsMatchReference) {
   std::mt19937 rng(42);
   std::uniform_int_distribution<int> value_dist(0, 1000000);
 
-  auto check_bounds = [&](int value) {
-    auto lb = table.lower_bound(table.begin(), table.end(), value, std::less<int>());
-    auto ref_lb = std::lower_bound(reference.begin(), reference.end(), value);
+  auto const check_bounds = [&](int value) {
+    auto const lb =
+        table.lower_bound(table.begin(), table.end(), value, std::less<>());
+    auto ref_lb = std::ranges::lower_bound(reference, value);
     BOOST_TEST(std::distance(table.begin(), lb) == ref_lb - reference.begin());
-    auto ub = table.upper_bound(table.begin(), table.end(), value, std::less<int>());
-    auto ref_ub = std::upper_bound(reference.begin(), reference.end(), value);
+    auto ub = table.upper_bound(table.begin(), table.end(), value, std::less<>());
+    auto ref_ub = std::ranges::upper_bound(reference, value);
     BOOST_TEST(std::distance(table.begin(), ub) == ref_ub - reference.begin());
   };
 
@@ -1275,12 +1322,11 @@ BOOST_AUTO_TEST_CASE(SortedOperationsMatchReference) {
   for(int cycle = 0; cycle < 2; ++cycle) {
     // Grow, with occasional erasures and repositions.
     while(static_cast<int>(reference.size()) < peak) {
-      int value = value_dist(rng);
-      auto it = table.upper_bound(table.begin(), table.end(), value, std::less<int>());
-      auto inserted = table.insert(it, value);
-      reference.insert(
-          std::upper_bound(reference.begin(), reference.end(), value),
-          value);
+      int const value = value_dist(rng);
+      auto const it =
+          table.upper_bound(table.begin(), table.end(), value, std::less<>());
+      auto const inserted = table.insert(it, value);
+      reference.insert(std::ranges::upper_bound(reference, value), value);
       if(!insert_error_reported && (inserted == table.end() || *inserted != value)) {
         // Report once. InsertAtEndReturnsInsertedElement covers the details
         // and the rest of this test is still useful.
@@ -1291,33 +1337,23 @@ BOOST_AUTO_TEST_CASE(SortedOperationsMatchReference) {
       if(op % 7 == 0 && !reference.empty()) {
         int victim = reference[rng() % reference.size()];
         auto pos =
-            table.lower_bound(table.begin(), table.end(), victim, std::less<int>());
+            table.lower_bound(table.begin(), table.end(), victim, std::less<>());
         table.erase(pos);
-        reference.erase(
-            std::lower_bound(reference.begin(), reference.end(), victim));
+        reference.erase(std::ranges::lower_bound(reference, victim));
       }
 
       if(op % 11 == 0 && !reference.empty()) {
         // Reposition: change a value and move it to its new sorted location.
-        int old_value = reference[rng() % reference.size()];
-        int new_value = value_dist(rng);
-        auto old_pos = table.lower_bound(
-            table.begin(),
-            table.end(),
-            old_value,
-            std::less<int>());
+        int const old_value = reference[rng() % reference.size()];
+        int const new_value = value_dist(rng);
+        auto const old_pos =
+            table.lower_bound(table.begin(), table.end(), old_value, std::less<>());
         table.erase(old_pos);
-        auto new_pos = table.upper_bound(
-            table.begin(),
-            table.end(),
-            new_value,
-            std::less<int>());
+        auto new_pos =
+            table.upper_bound(table.begin(), table.end(), new_value, std::less<>());
         table.insert(new_pos, new_value);
-        reference.erase(
-            std::lower_bound(reference.begin(), reference.end(), old_value));
-        reference.insert(
-            std::upper_bound(reference.begin(), reference.end(), new_value),
-            new_value);
+        reference.erase(std::ranges::lower_bound(reference, old_value));
+        reference.insert(std::ranges::upper_bound(reference, new_value), new_value);
       }
 
       if(op % 5000 == 0) {
@@ -1331,15 +1367,15 @@ BOOST_AUTO_TEST_CASE(SortedOperationsMatchReference) {
 
     // Shrink to empty by erasing random elements.
     while(!reference.empty()) {
-      int victim = reference[rng() % reference.size()];
-      auto pos =
-          table.lower_bound(table.begin(), table.end(), victim, std::less<int>());
+      int const victim = reference[rng() % reference.size()];
+      auto const pos =
+          table.lower_bound(table.begin(), table.end(), victim, std::less<>());
       if(pos == table.end() || *pos != victim) {
         BOOST_ERROR("lower_bound failed to find " << victim << " at op " << op);
         return;
       }
       table.erase(pos);
-      reference.erase(std::lower_bound(reference.begin(), reference.end(), victim));
+      reference.erase(std::ranges::lower_bound(reference, victim));
       if(op % 5000 == 0) {
         check_contents(table, reference);
         check_bounds(value_dist(rng));
@@ -1376,7 +1412,7 @@ IntTable make_varied_table(std::vector<int>& reference) {
   std::rotate(
       reference.begin() + 100,
       reference.begin() + kSplit + 200,
-      reference.begin() + kSplit * 2 + 300);
+      reference.begin() + (std::ptrdiff_t{kSplit} * 2) + 300);
   return table;
 }
 
@@ -1391,8 +1427,8 @@ BOOST_AUTO_TEST_CASE(RandomJumps) {
   std::mt19937 rng(7);
   std::uniform_int_distribution<int> index_dist(0, size);
   for(int i = 0; i < 20000; ++i) {
-    int from = index_dist(rng);
-    int to = index_dist(rng);
+    int const from = index_dist(rng);
+    int const to = index_dist(rng);
     auto it = table.begin() + from;
     it += to - from;
     if(it - table.begin() != to) {
@@ -1426,9 +1462,9 @@ BOOST_AUTO_TEST_CASE(JumpsWithUnevenSegments) {
   auto reference = make_reference(count);
   std::mt19937 rng(23);
   for(int i = 0; i < 300; ++i) {
-    int block = 1 + static_cast<int>(rng() % 50);
-    int first = static_cast<int>(rng() % (count - block));
-    int target = static_cast<int>(rng() % (count + 1));
+    int const block = 1 + static_cast<int>(rng() % 50);
+    int const first = static_cast<int>(rng() % (count - block));
+    int const target = static_cast<int>(rng() % (count + 1));
     if(target >= first && target <= first + block) {
       continue;
     }
@@ -1464,8 +1500,8 @@ BOOST_AUTO_TEST_CASE(JumpsWithUnevenSegments) {
 
   std::uniform_int_distribution<int> index_dist(0, count);
   for(int i = 0; i < 50000; ++i) {
-    int from = index_dist(rng);
-    int to = index_dist(rng);
+    int const from = index_dist(rng);
+    int const to = index_dist(rng);
     auto it = table.begin() + from;
     it += to - from;
     if(it - table.begin() != to || (to < count && *it != reference[to])) {
@@ -1491,40 +1527,38 @@ BOOST_AUTO_TEST_CASE(StdSort) {
   auto table = make_varied_table(reference);
   std::mt19937 rng(11);
   std::shuffle(table.begin(), table.end(), rng);
-  std::sort(table.begin(), table.end());
-  std::sort(reference.begin(), reference.end());
+  std::ranges::sort(table);
+  std::ranges::sort(reference);
   check_contents(table, reference);
 }
 
 BOOST_AUTO_TEST_CASE(StdBoundsMatchCustomBounds) {
   std::vector<int> reference;
   auto table = make_varied_table(reference);
-  std::sort(table.begin(), table.end());
-  std::sort(reference.begin(), reference.end());
+  std::ranges::sort(table);
+  std::ranges::sort(reference);
 
   std::mt19937 rng(13);
   std::uniform_int_distribution<int> value_dist(
       reference.front() - 2,
       reference.back() + 2);
   for(int i = 0; i < 2000; ++i) {
-    int value = value_dist(rng);
-    auto expected_lower = std::lower_bound(reference.begin(), reference.end(), value) -
+    int const value = value_dist(rng);
+    auto expected_lower = std::ranges::lower_bound(reference, value) -
                           reference.begin();
-    auto expected_upper = std::upper_bound(reference.begin(), reference.end(), value) -
+    auto expected_upper = std::ranges::upper_bound(reference, value) -
                           reference.begin();
     BOOST_TEST_INFO("value=" << value);
     BOOST_TEST(
-        std::lower_bound(table.begin(), table.end(), value) - table.begin() ==
-        expected_lower);
+        std::ranges::lower_bound(table, value) - table.begin() == expected_lower);
     BOOST_TEST(
-        std::upper_bound(table.begin(), table.end(), value) - table.begin() ==
-        expected_upper);
+        std::ranges::upper_bound(table, value) - table.begin() == expected_upper);
     BOOST_TEST(
-        table.lower_bound(table.begin(), table.end(), value, std::less<int>()) -
+        table.lower_bound(table.begin(), table.end(), value, std::less<>()) -
             table.begin() ==
         expected_lower);
     BOOST_TEST(
-        table.upper_bound(table.begin(), table.end(), value, std::less<int>()) -
+        table.upper_bound(table.begin(), table.end(), value, std::less<>()) -
             table.begin() ==
         expected_upper);
   }
@@ -1533,11 +1567,11 @@ BOOST_AUTO_TEST_CASE(StdBoundsMatchCustomBounds) {
 BOOST_AUTO_TEST_CASE(StdInplaceMerge) {
   std::vector<int> reference;
   auto table = make_varied_table(reference);
-  auto middle = static_cast<std::ptrdiff_t>(reference.size() / 3);
+  auto const middle = static_cast<std::ptrdiff_t>(reference.size() / 3);
   std::sort(table.begin(), table.begin() + middle);
   std::sort(table.begin() + middle, table.end());
-  std::inplace_merge(table.begin(), table.begin() + middle, table.end());
-  std::sort(reference.begin(), reference.end());
+  std::ranges::inplace_merge(table, table.begin() + middle);
+  std::ranges::sort(reference);
   check_contents(table, reference);
 }
 
@@ -1577,18 +1611,18 @@ bool check_bounds_on_subrange(
   auto const table_first = table.begin() + first;
   auto const table_last = table.begin() + last;
   IntTable const& const_table = table;
-  std::ptrdiff_t const results[] = {
-      table.lower_bound(table_first, table_last, value, std::less<int>()) -
+  std::array<std::ptrdiff_t, 6> const results = {
+      table.lower_bound(table_first, table_last, value, std::less<>()) -
           table.begin(),
-      const_table.lower_bound(table_first, table_last, value, std::less<int>()) -
+      const_table.lower_bound(table_first, table_last, value, std::less<>()) -
           const_table.begin(),
       std::lower_bound(table_first, table_last, value) - table.begin(),
-      table.upper_bound(table_first, table_last, value, std::less<int>()) -
+      table.upper_bound(table_first, table_last, value, std::less<>()) -
           table.begin(),
-      const_table.upper_bound(table_first, table_last, value, std::less<int>()) -
+      const_table.upper_bound(table_first, table_last, value, std::less<>()) -
           const_table.begin(),
       std::upper_bound(table_first, table_last, value) - table.begin()};
-  char const* const names[] = {
+  std::array<char const*, 6> const names = {
       "lower_bound",
       "const lower_bound",
       "std::lower_bound",
@@ -1631,8 +1665,8 @@ BOOST_AUTO_TEST_CASE(FullRangeAndSegmentBoundaries) {
     ends.insert(ends.end(), {boundary - 1, boundary, boundary + 1});
   }
 
-  for(int value : values_to_search(reference)) {
-    for(auto first : ends) {
+  for(int const value : values_to_search(reference)) {
+    for(auto const first : ends) {
       for(auto last : ends) {
         if(first <= last &&
            !check_bounds_on_subrange(table, reference, first, last, value)) {
@@ -1648,11 +1682,11 @@ BOOST_AUTO_TEST_CASE(RandomSubrangesAfterSplits) {
   IntTable table(reference.begin(), reference.end());
   std::mt19937 rng(17);
 
-  auto check_random_subranges = [&](int count) {
+  auto const check_random_subranges = [&](int count) {
     auto const size = static_cast<std::ptrdiff_t>(reference.size());
     auto const values = values_to_search(reference);
     for(int i = 0; i < count; ++i) {
-      auto a = std::uniform_int_distribution<std::ptrdiff_t>(0, size)(rng);
+      auto const a = std::uniform_int_distribution<std::ptrdiff_t>(0, size)(rng);
       auto b = std::uniform_int_distribution<std::ptrdiff_t>(0, size)(rng);
       int value = values[rng() % values.size()];
       if(!check_bounds_on_subrange(table, reference, std::min(a, b), std::max(a, b), value)) {
@@ -1668,11 +1702,9 @@ BOOST_AUTO_TEST_CASE(RandomSubrangesAfterSplits) {
   // positions that don't line up with the runs.
   for(int i = 0; i < 20000; ++i) {
     int value = 2 * static_cast<int>(rng() % 40);
-    auto it = table.upper_bound(table.begin(), table.end(), value, std::less<int>());
+    auto it = table.upper_bound(table.begin(), table.end(), value, std::less<>());
     table.insert(it, value);
-    reference.insert(
-        std::upper_bound(reference.begin(), reference.end(), value),
-        value);
+    reference.insert(std::ranges::upper_bound(reference, value), value);
   }
   check_contents(table, reference);
   check_random_subranges(3000);
@@ -1772,9 +1804,9 @@ BOOST_AUTO_TEST_CASE(SizesStayWithinThresholds) {
   // Rotating small blocks splits segments either side of each cut.
   auto const size = static_cast<int>(reference.size());
   for(int i = 0; i < 500; ++i) {
-    int block = 1 + static_cast<int>(rng() % 50);
-    int first = static_cast<int>(rng() % (size - block));
-    int target = static_cast<int>(rng() % (size + 1));
+    int const block = 1 + static_cast<int>(rng() % 50);
+    int const first = static_cast<int>(rng() % (size - block));
+    int const target = static_cast<int>(rng() % (size + 1));
     if(target >= first && target <= first + block) {
       continue;
     }
@@ -1810,8 +1842,8 @@ BOOST_AUTO_TEST_CASE(SizesStayWithinThresholds) {
 
   // Erase almost everything.
   while(reference.size() > 10) {
-    auto index = static_cast<std::ptrdiff_t>(rng() % reference.size());
-    auto it = table.erase(table.begin() + index);
+    auto const index = static_cast<std::ptrdiff_t>(rng() % reference.size());
+    auto const it = table.erase(table.begin() + index);
     reference.erase(reference.begin() + index);
     if(it - table.begin() != index) {
       BOOST_ERROR("erase returned the wrong position");
@@ -1855,7 +1887,7 @@ BOOST_AUTO_TEST_CASE(InsertRanges) {
   std::vector<int> const counts =
       {0, 1, 10, kSplit - 1, kSplit, kSplit + 1, kSplit * 3 + 5};
   for(int pos : positions) {
-    for(int n : counts) {
+    for(int const n : counts) {
       std::vector<int> values(static_cast<std::size_t>(n));
       std::iota(values.begin(), values.end(), -n);
       auto table = make_sequence(count);
@@ -1925,9 +1957,8 @@ bool check_small_table(
     std::vector<int> const& reference,
     std::mt19937& rng,
     bool sorted = true) {
-  if(table.size() != reference.size() ||
-     !std::equal(table.begin(), table.end(), reference.begin(), reference.end()) ||
-     !std::equal(table.rbegin(), table.rend(), reference.rbegin(), reference.rend())) {
+  if(table.size() != reference.size() || !std::ranges::equal(table, reference) ||
+     !std::ranges::equal(std::views::reverse(table), std::views::reverse(reference))) {
     BOOST_ERROR("Contents differ from the reference");
     return false;
   }
@@ -1958,33 +1989,33 @@ bool check_small_table(
 
   auto const size = static_cast<std::ptrdiff_t>(reference.size());
   for(int i = 0; sorted && i < 50; ++i) {
-    auto a = std::uniform_int_distribution<std::ptrdiff_t>(0, size)(rng);
-    auto b = std::uniform_int_distribution<std::ptrdiff_t>(0, size)(rng);
-    auto first = std::min(a, b);
-    auto last = std::max(a, b);
-    int value = static_cast<int>(rng() % 1100) - 50;
-    auto expected_lower = std::lower_bound(
-                              reference.begin() + first,
-                              reference.begin() + last,
-                              value) -
-                          reference.begin();
-    auto expected_upper = std::upper_bound(
-                              reference.begin() + first,
-                              reference.begin() + last,
-                              value) -
-                          reference.begin();
-    auto lower = table.lower_bound(
-                     table.begin() + first,
-                     table.begin() + last,
-                     value,
-                     std::less<int>()) -
-                 table.begin();
-    auto upper = table.upper_bound(
-                     table.begin() + first,
-                     table.begin() + last,
-                     value,
-                     std::less<int>()) -
-                 table.begin();
+    auto const a = std::uniform_int_distribution<std::ptrdiff_t>(0, size)(rng);
+    auto const b = std::uniform_int_distribution<std::ptrdiff_t>(0, size)(rng);
+    auto const first = std::min(a, b);
+    auto const last = std::max(a, b);
+    int const value = static_cast<int>(rng() % 1100) - 50;
+    auto const expected_lower = std::lower_bound(
+                                    reference.begin() + first,
+                                    reference.begin() + last,
+                                    value) -
+                                reference.begin();
+    auto const expected_upper = std::upper_bound(
+                                    reference.begin() + first,
+                                    reference.begin() + last,
+                                    value) -
+                                reference.begin();
+    auto const lower = table.lower_bound(
+                           table.begin() + first,
+                           table.begin() + last,
+                           value,
+                           std::less<>()) -
+                       table.begin();
+    auto const upper = table.upper_bound(
+                           table.begin() + first,
+                           table.begin() + last,
+                           value,
+                           std::less<>()) -
+                       table.begin();
     if(lower != expected_lower || upper != expected_upper) {
       BOOST_ERROR(
           "Bounds of " << value << " in [" << first << ", " << last << ") are "
@@ -2010,11 +2041,12 @@ BOOST_AUTO_TEST_CASE(RandomOperationsMatchReference) {
     auto const size = static_cast<std::ptrdiff_t>(reference.size());
 
     if(choice < (growing ? 55 : 35) || size < 4) {
-      int value = static_cast<int>(rng() % 1000);
-      auto it = table.upper_bound(table.begin(), table.end(), value, std::less<int>());
-      auto inserted = table.insert(it, value);
-      auto ref_it = reference.insert(
-          std::upper_bound(reference.begin(), reference.end(), value),
+      int const value = static_cast<int>(rng() % 1000);
+      auto const it =
+          table.upper_bound(table.begin(), table.end(), value, std::less<>());
+      auto const inserted = table.insert(it, value);
+      auto const ref_it = reference.insert(
+          std::ranges::upper_bound(reference, value),
           value);
       if(inserted - table.begin() != ref_it - reference.begin()) {
         BOOST_ERROR("insert returned the wrong position at op " << op);
@@ -2022,9 +2054,9 @@ BOOST_AUTO_TEST_CASE(RandomOperationsMatchReference) {
       }
     }
     else if(choice < 90) {
-      auto index = static_cast<std::ptrdiff_t>(
+      auto const index = static_cast<std::ptrdiff_t>(
           rng() % static_cast<std::size_t>(size));
-      auto next = table.erase(table.begin() + index);
+      auto const next = table.erase(table.begin() + index);
       reference.erase(reference.begin() + index);
       if(next - table.begin() != index) {
         BOOST_ERROR("erase returned the wrong position at op " << op);
@@ -2033,12 +2065,13 @@ BOOST_AUTO_TEST_CASE(RandomOperationsMatchReference) {
     }
     else if(choice < 96) {
       // Move a block away and back, which keeps the order.
-      auto block = 1 + static_cast<std::ptrdiff_t>(
-                           rng() % static_cast<std::size_t>(
-                                       std::min<std::ptrdiff_t>(size - 1, 200)));
-      auto first = static_cast<std::ptrdiff_t>(
+      auto const block = 1 + static_cast<std::ptrdiff_t>(
+                                 rng() %
+                                 static_cast<std::size_t>(
+                                     std::min<std::ptrdiff_t>(size - 1, 200)));
+      auto const first = static_cast<std::ptrdiff_t>(
           rng() % static_cast<std::size_t>(size - block + 1));
-      auto target = static_cast<std::ptrdiff_t>(
+      auto const target = static_cast<std::ptrdiff_t>(
           rng() % static_cast<std::size_t>(size + 1));
       if(target > first + block) {
         table.rotate(
@@ -2081,7 +2114,11 @@ BOOST_AUTO_TEST_CASE(RandomOperationsMatchReference) {
   check_small_table(table, reference, rng);
 }
 
-BOOST_AUTO_TEST_CASE(RandomRangeOperationsMatchReference) {
+// Takes minutes in a sanitised debug build, so CI skips it with the "long"
+// label.
+BOOST_AUTO_TEST_CASE(
+    RandomRangeOperationsMatchReference,
+    *boost::unit_test::label("long")) {
   SmallTable table;
   std::vector<int> reference;
   std::mt19937 rng(41);
@@ -2101,13 +2138,16 @@ BOOST_AUTO_TEST_CASE(RandomRangeOperationsMatchReference) {
       std::vector<int> values(static_cast<std::size_t>(count));
       std::iota(values.begin(), values.end(), op * 1000);
       auto const at = table.cbegin() + pos;
+      // The position is taken from begin() after the insert, which the order
+      // of evaluating the operands of - wouldn't guarantee.
+      SmallTable::iterator inserted;
       switch(rng() % 3) {
         case 0:
-          result = table.insert(at, values.begin(), values.end()) - table.begin();
+          inserted = table.insert(at, values.begin(), values.end());
           break;
         case 1: {
           std::list<int> list(values.begin(), values.end());
-          result = table.insert(at, list.begin(), list.end()) - table.begin();
+          inserted = table.insert(at, list.begin(), list.end());
           break;
         }
         default: {
@@ -2116,20 +2156,20 @@ BOOST_AUTO_TEST_CASE(RandomRangeOperationsMatchReference) {
             out << v << ' ';
           }
           std::istringstream in(out.str());
-          result = table.insert(
-                       at,
-                       std::istream_iterator<int>(in),
-                       std::istream_iterator<int>()) -
-                   table.begin();
+          inserted = table.insert(
+              at,
+              std::istream_iterator<int>(in),
+              std::istream_iterator<int>());
           break;
         }
       }
+      result = inserted - table.begin();
       reference.insert(reference.begin() + pos, values.begin(), values.end());
     }
     else {
       auto const last = std::min(size, pos + count);
-      result = table.erase(table.cbegin() + pos, table.cbegin() + last) -
-               table.begin();
+      auto const erased = table.erase(table.cbegin() + pos, table.cbegin() + last);
+      result = erased - table.begin();
       reference.erase(reference.begin() + pos, reference.begin() + last);
     }
 

@@ -30,6 +30,23 @@
 
 #include "daily/future/DefaultAllocator.hpp"
 
+// A future and promise in the style of std::future and std::promise, with
+// continuations: future::then gives a new future for the result of a
+// function of this one's result. Where the continuation runs is chosen with
+// a tag:
+//
+//   continue_on::set runs it on the thread that sets the result.
+//   continue_on::get runs it on the thread that asks for the continuation's
+//     result, when it does.
+//   continue_on::any runs it on whichever of those comes first. Plain
+//     then(f) does this.
+//   execute::dispatch, execute::post and execute::defer submit it to an
+//     executor, with its function of the same name, as Asio's do.
+//
+// Each step of a chain shares the mutex of the promise at its root. promise,
+// packaged_task and then can be given an allocator for the shared states,
+// which is future_default_allocator if they aren't.
+
 namespace daily {
 template <typename Result>
 class future;
@@ -37,11 +54,14 @@ class future;
 template <typename Result>
 class promise;
 
+// Whether a wait for a future ended because it was ready, or because the
+// time was up.
 enum class future_status {
   ready,
   timeout,
 };
 
+// Why a future_error was thrown, as std::future_errc.
 enum class future_errc {
   broken_promise,
   future_already_retrieved,
@@ -49,6 +69,8 @@ enum class future_errc {
   no_state,
 };
 
+// The tags for where future::then runs a continuation that isn't given an
+// executor. See the top of this file.
 namespace continue_on {
 struct any_t {
 } constexpr any;
@@ -58,6 +80,8 @@ struct set_t {
 } constexpr set;
 }; // namespace continue_on
 
+// The tags for how future::then submits a continuation to an executor. See
+// the top of this file.
 namespace execute {
 struct dispatch_t {
 } constexpr dispatch;
@@ -67,9 +91,11 @@ struct defer_t {
 } constexpr defer;
 }; // namespace execute
 
+// Thrown for misuse, such as setting a promise's result twice, as
+// std::future_error.
 class future_error : public std::logic_error {
  public:
-  future_error(future_errc err)
+  explicit future_error(future_errc err)
       : logic_error("")
       , error_(err) {
   }
@@ -83,11 +109,13 @@ class future_error : public std::logic_error {
 };
 
 namespace detail {
+// Unlocks a lock for its lifetime, and locks it again when destroyed, unless
+// something else has.
 class reverse_lock {
   std::unique_lock<std::mutex>& lock_;
 
  public:
-  reverse_lock(std::unique_lock<std::mutex>& lk)
+  explicit reverse_lock(std::unique_lock<std::mutex>& lk)
       : lock_(lk) {
     lock_.unlock();
   }
@@ -117,13 +145,9 @@ class future_shared_state_base {
   future_shared_state_base(future_shared_state_base&&) = delete;
   future_shared_state_base& operator=(future_shared_state_base&&) = delete;
 
-  virtual ~future_shared_state_base() {
-  }
+  virtual ~future_shared_state_base() = default;
 
-  future_shared_state_base()
-      : finished_(false)
-      , is_valid_(true) {
-  }
+  future_shared_state_base() = default;
 
   void set_finished(std::unique_lock<std::mutex>& lock) {
     finished_ = true;
@@ -146,12 +170,12 @@ class future_shared_state_base {
     }
   }
 
-  bool is_finished(std::unique_lock<std::mutex>&) {
+  bool is_finished(std::unique_lock<std::mutex>&) const {
     return finished_;
   }
 
   bool has_exception(std::unique_lock<std::mutex>&) const {
-    return exception_ ? true : false;
+    return static_cast<bool>(exception_);
   }
 
   void set_invalid(std::unique_lock<std::mutex>&) {
@@ -177,20 +201,23 @@ class future_shared_state_base {
   }
 
   void do_wait_result(std::unique_lock<std::mutex>& lock) {
-    if(!finished_)
+    if(!finished_) {
       continuation_result_requested(lock);
+    }
 
     do_wait(lock);
   }
 
-  void check_exception(std::unique_lock<std::mutex>& lock) {
-    if(exception_)
+  void check_exception(std::unique_lock<std::mutex>& /*lock*/) {
+    if(exception_) {
       std::rethrow_exception(exception_);
+    }
   }
 
   void do_wait(std::unique_lock<std::mutex>& lock) {
-    while(!finished_)
+    while(!finished_) {
       ready_wait_.wait(lock);
+    }
   }
 
   template <typename Rep, typename Period>
@@ -224,15 +251,16 @@ class future_shared_state_base {
   }
 
   virtual void handle_continuation_result_requested(std::unique_lock<std::mutex>& lock) {
-    while(!finished_)
+    while(!finished_) {
       ready_wait_.wait(lock);
+    }
   }
 
   std::exception_ptr exception_;
   std::condition_variable ready_wait_;
   std::shared_ptr<future_shared_state_base> continuation_;
-  bool finished_;
-  bool is_valid_;
+  bool finished_{false};
+  bool is_valid_{true};
 };
 
 // Base shared state used by all dreived shares states -- adds the result.
@@ -319,6 +347,9 @@ class promise_future_shared_state : public future_shared_state<Result> {
   mutable std::mutex mutex_;
 };
 
+// Calls a continuation with its parent's result, and sets its own result to
+// what it returns. Specialised for continuations that take or return
+// nothing.
 template <typename Param, typename Return>
 struct continue_on_continuation_helper;
 
@@ -330,7 +361,9 @@ struct continue_on_continuation_helper {
     lock.unlock();
     Return current_result = caller->continuation_(caller->parent_->get(lock));
     lock.lock();
-    // cglover-aug8th_2016: Can an exception leak from here?
+    // Setting the result runs the continuations that follow this one and
+    // run where results are set, and rethrows what they throw, see
+    // do_continue.
     caller->set_finished_with_result(std::move(current_result), lock);
   }
 };
@@ -344,7 +377,9 @@ struct continue_on_continuation_helper<void, Return> {
     lock.unlock();
     Return current_result = caller->continuation_();
     lock.lock();
-    // cglover-aug8th_2016: Can an exception leak from here?
+    // Setting the result runs the continuations that follow this one and
+    // run where results are set, and rethrows what they throw, see
+    // do_continue.
     caller->set_finished_with_result(std::move(current_result), lock);
   }
 };
@@ -357,7 +392,9 @@ struct continue_on_continuation_helper<Param, void> {
     lock.unlock();
     caller->continuation_(caller->parent_->get(lock));
     lock.lock();
-    // cglover-aug8th_2016: Can an exception leak from here?
+    // Setting the result runs the continuations that follow this one and
+    // run where results are set, and rethrows what they throw, see
+    // do_continue.
     caller->set_finished_with_result(lock);
   }
 };
@@ -370,11 +407,15 @@ struct continue_on_continuation_helper<void, void> {
     lock.unlock();
     caller->continuation_();
     lock.lock();
-    // cglover-aug8th_2016: Can an exception leak from here?
+    // Setting the result runs the continuations that follow this one and
+    // run where results are set, and rethrows what they throw, see
+    // do_continue.
     caller->set_finished_with_result(lock);
   }
 };
 
+// The shared state of a continuation that isn't given an executor. The
+// derived states decide when it runs, see continue_on.
 template <typename ParentResult, typename Result, typename Function>
 class continue_on_basic_shared_state : public future_shared_state<Result> {
  public:
@@ -383,12 +424,19 @@ class continue_on_basic_shared_state : public future_shared_state<Result> {
       , continuation_(std::move(f)) {
   }
 
-  ~continue_on_basic_shared_state() = 0;
+  ~continue_on_basic_shared_state() override = 0;
 
  protected:
   template <typename Param, typename Return>
   friend struct continue_on_continuation_helper;
 
+  // Runs the continuation, and stores what it throws as its result.
+  //
+  // This doesn't work for an exception thrown after the continuation
+  // returns. Setting the result runs any continuation after this one that
+  // runs where results are set, which rethrows what it throws. That reaches
+  // the catch below with the lock held, where locking it again throws
+  // std::system_error, which escapes to whoever set the first result.
   void do_continue(std::unique_lock<std::mutex>& lock) {
     try {
       continue_on_continuation_helper<ParentResult, Result>::call(this, lock);
@@ -406,9 +454,11 @@ class continue_on_basic_shared_state : public future_shared_state<Result> {
 }; // namespace daily
 
 template <typename Future, typename Result, typename Function>
-inline continue_on_basic_shared_state<Future, Result, Function>::~continue_on_basic_shared_state() {
-}
+inline continue_on_basic_shared_state<Future, Result, Function>::~continue_on_basic_shared_state() =
+    default;
 
+// Runs when the parent's result is set or this one's is asked for,
+// whichever is first.
 template <typename ParentResult, typename Result, typename Function>
 class continue_on_any_shared_state
     : public continue_on_basic_shared_state<ParentResult, Result, Function> {
@@ -426,6 +476,7 @@ class continue_on_any_shared_state
   }
 };
 
+// Runs when the parent's result is set.
 template <typename ParentResult, typename Result, typename Function>
 class continue_on_set_shared_state
     : public continue_on_basic_shared_state<ParentResult, Result, Function> {
@@ -443,6 +494,7 @@ class continue_on_set_shared_state
   }
 };
 
+// Runs when this one's result is asked for.
 template <typename ParentResult, typename Result, typename Function>
 class continue_on_get_shared_state
     : public continue_on_basic_shared_state<ParentResult, Result, Function> {
@@ -459,6 +511,7 @@ class continue_on_get_shared_state
   }
 };
 
+// Make the shared state of a continuation for each continue_on tag.
 template <typename Result, typename ParentResult, typename Function, typename Allocator>
 auto make_continue_on_continuation(
     continue_on::any_t,
@@ -496,27 +549,32 @@ auto make_continue_on_continuation(
 }
 
 // Executor Continuations.
+
+// Submit a closure to an executor with its dispatch, post or defer.
 struct submit_dispatch {
   template <typename Executor, typename Closure, typename Allocator>
-  static void submit(Executor ex, Closure&& c, Allocator const& alloc) {
+  static void submit(Executor&& ex, Closure&& c, Allocator const& alloc) {
     ex.dispatch(std::forward<Closure>(c), alloc);
   }
 };
 
 struct submit_post {
   template <typename Executor, typename Closure, typename Allocator>
-  static void submit(Executor ex, Closure&& c, Allocator const& alloc) {
+  static void submit(Executor&& ex, Closure&& c, Allocator const& alloc) {
     ex.post(std::forward<Closure>(c), alloc);
   }
 };
 
 struct submit_defer {
   template <typename Executor, typename Closure, typename Allocator>
-  static void submit(Executor ex, Closure&& c, Allocator const& alloc) {
+  static void submit(Executor&& ex, Closure&& c, Allocator const& alloc) {
     ex.defer(std::forward<Closure>(c), alloc);
   }
 };
 
+// Submits a closure that calls a continuation with its parent's result and
+// sets its own result to what it returns. Specialised for continuations
+// that take or return nothing.
 template <typename Submiter, typename Param, typename Return>
 struct executor_continuation_helper;
 
@@ -604,6 +662,8 @@ struct executor_continuation_helper<Submiter, void, void> {
   }
 };
 
+// The shared state of a continuation given an executor, which is submitted
+// to it when the parent's result is set.
 template <typename Submitter, typename Executor, typename ParentResult, typename Result, typename Function, typename Allocator>
 class executor_continuation_shared_state : public future_shared_state<Result> {
  public:
@@ -611,12 +671,12 @@ class executor_continuation_shared_state : public future_shared_state<Result> {
       Executor ex,
       future_shared_state<ParentResult>* parent,
       Function&& f,
-      std::shared_ptr<std::mutex> mutex,
+      std::shared_ptr<std::mutex> const& mutex,
       Allocator alloc)
       : parent_(std::move(parent))
-      , executor_(ex)
+      , executor_(std::move(ex))
       , continuation_(std::move(f))
-      , promise_mutex_(std::move(mutex))
+      , promise_mutex_(mutex)
       , allocator_(alloc) {
   }
 
@@ -625,15 +685,16 @@ class executor_continuation_shared_state : public future_shared_state<Result> {
   friend struct executor_continuation_helper;
 
   void handle_continuation_result_ready(std::unique_lock<std::mutex>& lock) override {
-    assert(lock.mutex() == promise_mutex_.get());
-
-    // We don't need to store a shared ptr to this state here
-    // because the shared_ptr to the promise mutex will keep the
-    // whole chain alive.
+    // The promise mutex shares ownership of the root state, which owns this
+    // state through the chain of continuations. Whoever is finishing the
+    // parent holds the root, so this can't fail. The submitted closure keeps
+    // its own reference, so the chain stays alive until it has run.
+    std::shared_ptr<std::mutex> promise_mutex = promise_mutex_.lock();
+    assert(promise_mutex && lock.mutex() == promise_mutex.get());
     executor_continuation_helper<Submitter, ParentResult, Result>::call(
         this,
         lock,
-        promise_mutex_,
+        promise_mutex,
         allocator_);
   }
 
@@ -642,17 +703,20 @@ class executor_continuation_shared_state : public future_shared_state<Result> {
   future_shared_state<ParentResult>* parent_;
   Executor executor_;
   Function continuation_;
-  std::shared_ptr<std::mutex> promise_mutex_;
+  // Weak, because the root state owns this one; a strong reference would be
+  // a cycle that keeps the whole chain alive forever.
+  std::weak_ptr<std::mutex> promise_mutex_;
   Allocator allocator_;
 };
 
+// Make the shared state of a continuation for each execute tag.
 template <typename Result, typename Executor, typename ParentResult, typename Function, typename Allocator>
 auto make_executor_continuation(
     execute::dispatch_t,
     Executor ex,
     future_shared_state<ParentResult>* parent,
     Function&& func,
-    std::shared_ptr<std::mutex> mutex,
+    std::shared_ptr<std::mutex> const& mutex,
     Allocator const& alloc) {
   using shared_state =
       executor_continuation_shared_state<submit_dispatch, Executor, ParentResult, Result, Function, Allocator>;
@@ -662,7 +726,7 @@ auto make_executor_continuation(
       std::move(ex),
       parent,
       std::forward<Function>(func),
-      std::move(mutex),
+      mutex,
       alloc);
 }
 
@@ -672,7 +736,7 @@ auto make_executor_continuation(
     Executor ex,
     future_shared_state<ParentResult>* parent,
     Function&& func,
-    std::shared_ptr<std::mutex> mutex,
+    std::shared_ptr<std::mutex> const& mutex,
     Allocator const& alloc) {
   using shared_state =
       executor_continuation_shared_state<submit_post, Executor, ParentResult, Result, Function, Allocator>;
@@ -682,7 +746,7 @@ auto make_executor_continuation(
       std::move(ex),
       parent,
       std::forward<Function>(func),
-      std::move(mutex),
+      mutex,
       alloc);
 }
 
@@ -692,7 +756,7 @@ auto make_executor_continuation(
     Executor ex,
     future_shared_state<ParentResult>* parent,
     Function&& func,
-    std::shared_ptr<std::mutex> mutex,
+    std::shared_ptr<std::mutex> const& mutex,
     Allocator const& alloc) {
   using shared_state =
       executor_continuation_shared_state<submit_defer, Executor, ParentResult, Result, Function, Allocator>;
@@ -702,11 +766,14 @@ auto make_executor_continuation(
       std::move(ex),
       parent,
       std::forward<Function>(func),
-      std::move(mutex),
+      mutex,
       alloc);
 }
 } // namespace detail
 
+// Sets the result of the future it gives, as std::promise. Destroying it
+// before setting a result breaks the promise: the future throws a
+// future_error with future_errc::broken_promise.
 template <typename Result = void>
 class promise {
  private:
@@ -801,6 +868,7 @@ class promise {
             state_->set_finished_with_exception(std::current_exception(), lk);
           }
           // Don't let exceptions escape from the dtor.
+          // NOLINTNEXTLINE(bugprone-empty-catch)
           catch(...) {
           }
         }
@@ -817,6 +885,9 @@ void swap(promise<Result>& lhs, promise<Result>& rhs) noexcept {
   lhs.swap(rhs);
 }
 
+// The result of a promise or a packaged_task, as std::future, which then can
+// add continuations to. Adding one moves this future's state into the
+// continuation, so this one is no longer valid.
 template <typename Result = void>
 class future {
  private:
@@ -959,16 +1030,17 @@ class future {
 
   template <typename Selector, typename F, typename Allocator>
   auto continue_on_then(Selector s, F&& f, Allocator const& alloc) {
-    using ContinuationResult = typename result_of<F, Result>::type;
+    using ContinuationResult = result_of<F, Result>::type;
 
     // 'this' future is now invalidated so we move the state out
     // to indicate that.
-    auto current_state = std::move(state_);
-    auto continuation_state = detail::make_continue_on_continuation<ContinuationResult>(
-        s,
-        current_state.get(),
-        std::forward<F>(f),
-        alloc);
+    auto const current_state = std::move(state_);
+    auto const continuation_state =
+        detail::make_continue_on_continuation<ContinuationResult>(
+            s,
+            current_state.get(),
+            std::forward<F>(f),
+            alloc);
 
     auto lk = lock();
     current_state->set_continuation(continuation_state, lk);
@@ -977,18 +1049,19 @@ class future {
 
   template <typename Selector, typename Executor, typename F, typename Allocator>
   auto executor_then(Selector s, Executor& ex, F&& f, Allocator const& alloc) {
-    using ContinuationResult = typename result_of<F, Result>::type;
+    using ContinuationResult = result_of<F, Result>::type;
 
     // 'this' future is now invalidated so we move the state out
     // to indicate that.
-    auto current_state = std::move(state_);
-    auto continuation_state = detail::make_executor_continuation<ContinuationResult>(
-        s,
-        ex.get_executor(),
-        current_state.get(),
-        std::forward<F>(f),
-        mutex_,
-        alloc);
+    auto const current_state = std::move(state_);
+    auto const continuation_state =
+        detail::make_executor_continuation<ContinuationResult>(
+            s,
+            ex.get_executor(),
+            current_state.get(),
+            std::forward<F>(f),
+            mutex_,
+            alloc);
 
     auto lk = lock();
     current_state->set_continuation(continuation_state, lk);
@@ -1010,7 +1083,7 @@ class future {
 
   explicit future(std::shared_ptr<shared_state> ss, std::shared_ptr<std::mutex> promise_mutex)
       : state_(std::move(ss))
-      , mutex_(promise_mutex) {
+      , mutex_(std::move(promise_mutex)) {
   }
 
   std::shared_ptr<shared_state> state_;
@@ -1020,13 +1093,17 @@ class future {
 template <typename>
 class packaged_task; // undefined
 
+// Calls a function and sets the result of the future it gives to what it
+// returns, or what it throws, as std::packaged_task.
 template <class Result, typename... Args>
 class packaged_task<Result(Args...)> {
  public:
-  packaged_task() noexcept {
-  }
+  // Not noexcept, unlike std::packaged_task's, because the promise allocates
+  // its shared state.
+  packaged_task() = default;
 
   template <class F>
+    requires(!std::is_same_v<std::remove_cvref_t<F>, packaged_task>)
   explicit packaged_task(F&& f)
       : func_(std::forward<F>(f)) {
   }
@@ -1095,11 +1172,12 @@ class packaged_task<Result(Args...)> {
 };
 
 template <typename Result, typename... Args>
-void swap(packaged_task<Result(Args...)>& lhs, packaged_task<Result(Args...)>& rhs) {
+void swap(packaged_task<Result(Args...)>& lhs, packaged_task<Result(Args...)>& rhs) noexcept {
   lhs.swap(rhs);
 }
 }; // namespace daily
 
+// promise and packaged_task take allocators, as their std counterparts do.
 namespace std {
 template <typename Result, typename Alloc>
 struct uses_allocator<daily::promise<Result>, Alloc> : std::true_type {};

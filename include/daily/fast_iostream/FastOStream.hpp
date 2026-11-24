@@ -15,6 +15,7 @@
 #define DAILY_FAST_IOSTREAM_FASTOSTREAM_HPP
 #pragma once
 
+#include <array>
 #include <charconv>
 #include <cstring>
 #include <ios>
@@ -85,9 +86,9 @@ void write_raw(Stream& stream, char const* data, std::streamsize size) {
 template <typename Stream, typename T>
   requires detail::kFastFormatted<T>
 FastOStream<Stream>& operator<<(FastOStream<Stream>& o, T v) {
-  char buf[detail::kMaxNumberChars];
-  char* end = std::to_chars(buf, buf + detail::kMaxNumberChars, v).ptr;
-  detail::write_raw(o.stream(), buf, end - buf);
+  std::array<char, detail::kMaxNumberChars> buf;
+  char const* end = std::to_chars(buf.data(), buf.data() + buf.size(), v).ptr;
+  detail::write_raw(o.stream(), buf.data(), end - buf.data());
   return o;
 }
 

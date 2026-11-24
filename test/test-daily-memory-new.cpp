@@ -17,6 +17,7 @@
 // by the test framework aren't charged to it.
 #include <boost/test/unit_test.hpp>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <new>
@@ -27,7 +28,7 @@
 namespace {
 
 struct Plain {
-  char data[1000];
+  std::array<char, 1000> data;
 };
 
 } // namespace
@@ -37,15 +38,25 @@ struct Plain {
 namespace {
 
 struct alignas(64) Aligned {
-  char data[100];
+  std::array<char, 100> data;
 };
 
 struct alignas(4096) PageAligned {
-  char data[10];
+  std::array<char, 10> data;
 };
 
 std::int64_t heap(daily::AllocationCategory category) {
   return daily::allocation_category_usage(category).heap;
+}
+
+// The compiler may leave out a new-expression and its delete when nothing
+// else uses the memory, so a pointer is passed through this to keep the
+// allocation.
+template <typename T>
+T* keep(T* p) {
+  static T* volatile kept;
+  kept = p;
+  return kept;
 }
 
 } // namespace
@@ -56,7 +67,7 @@ BOOST_AUTO_TEST_CASE(AllocationCategoryNew_charges_new_and_delete) {
   std::int64_t during = 0;
   {
     daily::AllocationCategoryScope scope(kCategory);
-    Plain* p = new Plain;
+    Plain* p = keep(new Plain);
     during = heap(kCategory);
     delete p;
   }
@@ -70,7 +81,7 @@ BOOST_AUTO_TEST_CASE(AllocationCategoryNew_charges_arrays) {
   std::int64_t during = 0;
   {
     daily::AllocationCategoryScope scope(kCategory);
-    char* p = new char[777];
+    char* p = keep(new char[777]);
     during = heap(kCategory);
     delete[] p;
   }
@@ -85,8 +96,8 @@ BOOST_AUTO_TEST_CASE(AllocationCategoryNew_charges_nothrow_and_sized) {
   std::int64_t after_sized = 0;
   bool allocated = false;
   {
-    daily::AllocationCategoryScope scope(kCategory);
-    Plain* p = new(std::nothrow) Plain;
+    daily::AllocationCategoryScope const scope(kCategory);
+    Plain const* p = keep(new(std::nothrow) Plain);
     allocated = p != nullptr;
     after_nothrow = heap(kCategory);
     delete p;
@@ -108,9 +119,9 @@ BOOST_AUTO_TEST_CASE(AllocationCategoryNew_aligns_over_aligned_types) {
   std::uintptr_t aligned_address = 0;
   std::uintptr_t page_aligned_address = 0;
   {
-    daily::AllocationCategoryScope scope(kCategory);
-    Aligned* a = new Aligned;
-    PageAligned* b = new(std::nothrow) PageAligned;
+    daily::AllocationCategoryScope const scope(kCategory);
+    Aligned const* a = new Aligned;
+    PageAligned const* b = new(std::nothrow) PageAligned;
     aligned_address = reinterpret_cast<std::uintptr_t>(a);
     page_aligned_address = reinterpret_cast<std::uintptr_t>(b);
     during = heap(kCategory);
@@ -131,7 +142,7 @@ BOOST_AUTO_TEST_CASE(AllocationCategoryNew_aligns_over_aligned_types) {
 BOOST_AUTO_TEST_CASE(AllocationCategoryNew_frees_on_another_thread) {
   constexpr daily::AllocationCategory kCategory = 105;
   std::int64_t const before = heap(kCategory);
-  Plain* p = nullptr;
+  Plain const* p = nullptr;
   {
     daily::AllocationCategoryScope scope(kCategory);
     p = new Plain;

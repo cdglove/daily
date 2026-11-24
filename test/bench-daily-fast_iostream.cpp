@@ -13,6 +13,7 @@
 // limitations under the License.
 #include <benchmark/benchmark.h>
 
+#include <array>
 #include <charconv>
 #include <cstddef>
 #include <format>
@@ -89,8 +90,10 @@ template <typename T>
 std::string make_text() {
   std::string text;
   for(T v : make_values<T>()) {
-    char buf[64];
-    text.append(buf, std::to_chars(buf, buf + sizeof(buf), v).ptr);
+    std::array<char, 64> buf;
+    text.append(
+        buf.data(),
+        std::to_chars(buf.data(), buf.data() + buf.size(), v).ptr);
     text += ' ';
   }
   return text;
@@ -107,14 +110,14 @@ std::locale named_locale() {
 
 template <typename T>
 void set_items(benchmark::State& state) {
-  state.SetItemsProcessed(state.iterations() * kCount);
+  state.SetItemsProcessed(static_cast<std::int64_t>(state.iterations() * kCount));
 }
 
 // Formatting
 
 template <typename T>
 void bm_format_ostream(benchmark::State& state, std::locale const& loc) {
-  auto values = make_values<T>();
+  auto const values = make_values<T>();
   FixedBuffer buffer;
   std::ostream out(&buffer);
   out.imbue(loc);
@@ -139,7 +142,7 @@ void bm_format_ostream_named(benchmark::State& state) {
 
 template <typename T>
 void bm_format_ostream_round_trip(benchmark::State& state) {
-  auto values = make_values<T>();
+  auto const values = make_values<T>();
   FixedBuffer buffer;
   std::ostream out(&buffer);
   out << std::setprecision(std::numeric_limits<T>::max_digits10);
@@ -159,7 +162,7 @@ void bm_format_ostream_fast_locale(benchmark::State& state) {
 
 template <typename T>
 void bm_format_fast_ostream(benchmark::State& state) {
-  auto values = make_values<T>();
+  auto const values = make_values<T>();
   FixedBuffer buffer;
   std::ostream out(&buffer);
   daily::FastOStream<std::ostream> fast(out);
@@ -174,9 +177,9 @@ void bm_format_fast_ostream(benchmark::State& state) {
 
 template <typename T>
 void bm_format_std_format(benchmark::State& state) {
-  auto values = make_values<T>();
+  auto const values = make_values<T>();
   std::vector<char> buffer(kCount * 32);
-  for(auto _ : state) {
+  for(auto const _ : state) {
     char* out = buffer.data();
     for(T v : values) {
       out = std::format_to(out, "{} ", v);
@@ -188,9 +191,9 @@ void bm_format_std_format(benchmark::State& state) {
 
 template <typename T>
 void bm_format_to_chars(benchmark::State& state) {
-  auto values = make_values<T>();
+  auto const values = make_values<T>();
   std::vector<char> buffer(kCount * 32);
-  for(auto _ : state) {
+  for(auto const _ : state) {
     char* out = buffer.data();
     for(T v : values) {
       out = std::to_chars(out, out + 32, v).ptr;
@@ -205,8 +208,8 @@ void bm_format_to_chars(benchmark::State& state) {
 
 template <typename T>
 void bm_parse_istream(benchmark::State& state, std::locale const& loc) {
-  std::string text = make_text<T>();
-  for(auto _ : state) {
+  std::string const text = make_text<T>();
+  for(auto const _ : state) {
     std::istringstream in(text);
     in.imbue(loc);
     T v;
@@ -235,8 +238,8 @@ void bm_parse_istream_fast_locale(benchmark::State& state) {
 
 template <typename T>
 void bm_parse_fast_istream(benchmark::State& state) {
-  std::string text = make_text<T>();
-  for(auto _ : state) {
+  std::string const text = make_text<T>();
+  for(auto const _ : state) {
     std::istringstream in(text);
     daily::FastIStream<std::istream> fast(in);
     T v;
@@ -251,7 +254,7 @@ void bm_parse_fast_istream(benchmark::State& state) {
 template <typename T>
 void bm_parse_from_chars(benchmark::State& state) {
   std::string text = make_text<T>();
-  for(auto _ : state) {
+  for(auto const _ : state) {
     char const* p = text.data();
     char const* end = p + text.size();
     T v;
@@ -265,10 +268,12 @@ void bm_parse_from_chars(benchmark::State& state) {
 
 } // namespace
 
+// NOLINTBEGIN(bugprone-macro-parentheses): function names a template
 #define DAILY_BENCH_TYPES(function)                                            \
   BENCHMARK(function<int>);                                                    \
   BENCHMARK(function<long long>);                                              \
   BENCHMARK(function<double>)
+// NOLINTEND(bugprone-macro-parentheses)
 
 DAILY_BENCH_TYPES(bm_format_ostream_classic);
 DAILY_BENCH_TYPES(bm_format_ostream_named);

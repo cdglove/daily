@@ -67,12 +67,12 @@ BOOST_AUTO_TEST_CASE(verbosity_filters) {
 }
 
 BOOST_AUTO_TEST_CASE(manipulators) {
-  daily::log() << "line" << std::endl;
+  daily::log() << "line" << '\n';
   BOOST_TEST(out.str() == "line\n");
 }
 
 BOOST_AUTO_TEST_CASE(discarded_manipulators) {
-  daily::log(1) << "line" << std::endl;
+  daily::log(1) << "line" << '\n';
   BOOST_TEST(out.str().empty());
 }
 

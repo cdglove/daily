@@ -1,0 +1,112 @@
+---
+# Checks are enabled by group, then the ones that conflict with the style of
+# this codebase or only report noise are turned off.
+#
+# Turned off because they conflict with the style here:
+#   cppcoreguidelines-special-member-functions: doesn't recognise
+#     boost::noncopyable, which is preferred to deleted members.
+#   modernize-use-nodiscard: [[nodiscard]] is added by hand where ignoring
+#     the result is a bug, not on every const member function.
+#   readability-implicit-bool-conversion: if(ptr) and if(count) are fine.
+#   readability-uppercase-literal-suffix, readability-trailing-comma,
+#   readability-named-parameter, readability-math-missing-parentheses,
+#   modernize-use-trailing-return-type: formatting preferences.
+#   misc-non-private-member-variables-in-classes: plain structs are used.
+#   bugprone-easily-swappable-parameters: would mean redesigning APIs.
+#   performance-enum-size: memory isn't a concern for enums here.
+#
+# Turned off because they report too much that is intentional:
+#   readability-function-cognitive-complexity, misc-no-recursion.
+#   bugprone-multi-level-implicit-pointer-conversion: memcpy of pointer
+#     arrays.
+#   bugprone-unchecked-optional-access: doesn't follow invariants or
+#     BOOST_REQUIRE; all 40 findings when it was added were of those.
+#   bugprone-signed-bitwise: C APIs such as mmap, FSEvents and wxWidgets
+#     define their flags as signed ints.
+#   bugprone-random-generator-seed: tests seed deterministically.
+#   misc-const-correctness: makes every local that isn't changed const,
+#     including in short scopes where it adds nothing, and can turn a
+#     std::move of a variable into a copy. Its fixes were applied once and
+#     then reviewed by hand.
+#   modernize-use-integer-sign-comparison: std::cmp_less and friends only
+#     differ from < when the signed value is negative, and in loops such as
+#     i < count they're harder to read.
+#   cppcoreguidelines-missing-std-forward: callables are taken as F&& and
+#     called more than once, where forwarding them would be wrong.
+#   cppcoreguidelines-init-variables, cppcoreguidelines-pro-type-member-init:
+#     variables are left uninitialised when a call or both branches of an if
+#     write them. Initialising them costs stores the compiler can't remove
+#     when the address goes to an opaque call such as stat. Clang's
+#     -Wuninitialized, -Wsometimes-uninitialized and
+#     -Wconditional-uninitialized follow the control flow instead, and the
+#     build turns them on for this repository's code.
+#   misc-multiple-inheritance, misc-override-with-different-visibility:
+#     wxWidgets and std::streambuf are used this way.
+#   readability-convert-member-functions-to-static: makes a member function
+#     static when it doesn't use this, even where it's part of the object's
+#     interface, and calls through an object then access a static member
+#     through an instance. wx event handlers also have to be members.
+#   readability-inconsistent-declaration-parameter-name: all it reported were
+#     libc++'s declarations of operator new and delete, which three files
+#     replace, because libc++ names their parameters with reserved names. The
+#     warnings are in the SDK's headers, where a NOLINT can't go.
+#   readability-qualified-auto: its fixes put const before the type, and in
+#     templates where an iterator is a pointer in only some instantiations,
+#     they don't compile.
+#
+# Turned off for now and worth doing separately:
+#   misc-include-cleaner: only sees the headers needed on the platform it
+#     runs on.
+#
+# Only some of cppcoreguidelines are on; most of the rest (pro-bounds-*,
+# pro-type-*, owning-memory, ...) don't fit low-level container code.
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-multi-level-implicit-pointer-conversion,
+  -bugprone-random-generator-seed,
+  -bugprone-signed-bitwise,
+  -bugprone-unchecked-optional-access,
+  cppcoreguidelines-misleading-capture-default-by-value,
+  cppcoreguidelines-prefer-member-initializer,
+  cppcoreguidelines-rvalue-reference-param-not-moved,
+  cppcoreguidelines-slicing,
+  misc-*,
+  -misc-const-correctness,
+  -misc-include-cleaner,
+  -misc-multiple-inheritance,
+  -misc-no-recursion,
+  -misc-non-private-member-variables-in-classes,
+  -misc-override-with-different-visibility,
+  modernize-*,
+  -modernize-use-integer-sign-comparison,
+  -modernize-use-nodiscard,
+  -modernize-use-trailing-return-type,
+  performance-*,
+  -performance-enum-size,
+  readability-*,
+  -readability-function-cognitive-complexity,
+  -readability-identifier-length,
+  -readability-implicit-bool-conversion,
+  -readability-inconsistent-declaration-parameter-name,
+  -readability-magic-numbers,
+  -readability-convert-member-functions-to-static,
+  -readability-math-missing-parentheses,
+  -readability-qualified-auto,
+  -readability-named-parameter,
+  -readability-trailing-comma,
+  -readability-uppercase-literal-suffix
+
+HeaderFilterRegex: '/include/daily/'
+
+CheckOptions:
+  # A throw from main ends the program, which is what's wanted.
+  bugprone-exception-escape.CheckMain: false
+  # Moving a member of an rvalue reference parameter counts as moving it.
+  cppcoreguidelines-rvalue-reference-param-not-moved.AllowPartialMove: true
+  # Asio's error_code overloads return the error_code they also write to.
+  bugprone-unused-return-value.CheckedReturnTypes: '::std::errc;::std::expected'
+  # A struct with one member is clear enough without the name.
+  modernize-use-designated-initializers.IgnoreSingleElementAggregates: true
+...

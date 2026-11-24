@@ -15,6 +15,8 @@
 #define DAILY_COMPACTOPTIONAL_HPP
 #pragma once
 
+// compact_optional is in daily/utility. This is kept for code that includes
+// it from here.
 #include "daily/utility/CompactOptional.hpp"
 
 #endif // DAILY_COMPACTOPTIONAL_HPP

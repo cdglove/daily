@@ -40,6 +40,7 @@
 
 namespace daily {
 
+// Writes what's streamed into it to a sink, see log.
 class Logger {
  public:
 #if DAILY_ENABLE_FAST_LOG
@@ -98,6 +99,8 @@ extern std::atomic<std::ostream*> g_log_sink;
 std::ostream& null_log_sink();
 } // namespace detail
 
+// A Logger that writes to the sink if verbosity is at most the one set with
+// set_log_verbosity, or discards what's written otherwise.
 inline Logger log(unsigned int verbosity = 0) {
   if(detail::g_log_verbosity.load(std::memory_order_relaxed) >= verbosity) {
     return Logger(*detail::g_log_sink.load(std::memory_order_relaxed));
