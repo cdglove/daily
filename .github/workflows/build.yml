@@ -1,0 +1,79 @@
+name: Build and test
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            cache_tool: ccache
+          - os: macos-latest
+            cache_tool: ccache
+          - os: windows-latest
+            cache_tool: sccache
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC command line tools
+        if: matrix.os == 'windows-latest'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          variant: ${{ matrix.cache_tool }}
+          key: ${{ github.job }}-${{ matrix.os }}
+          max-size: 2G
+
+      - name: Configure CMake
+        run: >
+          cmake -B build -S .
+          -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_COMPILER_LAUNCHER=${{ matrix.cache_tool }}
+          -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        working-directory: build
+        env:
+          # Skip test cases labelled as taking too long to run on every push.
+          BOOST_TEST_RUN_FILTERS: '!@long'
+        run: |
+          if ($IsWindows) {
+            ctest --output-on-failure --parallel 4
+          } else {
+            if ($IsLinux) {
+              sudo sysctl -w kernel.core_pattern=core.%e.%p
+            }
+            bash -c "ulimit -c unlimited && ctest --output-on-failure --parallel 4"
+          }
+
+      - name: Upload crash dumps
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crash-dumps-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: |
+            C:\Users\runneradmin\AppData\Local\CrashDumps
+            /cores/core.*
+            build/core.*
