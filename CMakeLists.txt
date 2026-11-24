@@ -126,6 +126,19 @@ target_link_libraries(daily_container
     daily::memory
 )
 
+# Synchronisation
+add_library(daily_synchronisation INTERFACE)
+add_library(daily::synchronisation ALIAS daily_synchronisation)
+
+target_sources(daily_synchronisation
+  INTERFACE
+    FILE_SET HEADERS
+    BASE_DIRS include
+    FILES include/daily/synchronisation/TicketGate.hpp
+)
+
+target_compile_features(daily_synchronisation INTERFACE cxx_std_20)
+
 # Utility
 add_library(daily_utility INTERFACE)
 add_library(daily::utility ALIAS daily_utility)
@@ -221,6 +234,7 @@ if(DAILY_BUILD_TESTING)
     test/test-daily-memory-AllocationCategory.cpp
     test/test-daily-memory-VirtualMemory.cpp
     test/test-daily-program_options-ProgramOptions.cpp
+    test/test-daily-synchronisation-TicketGate.cpp
     test/test-daily-trace-Log.cpp
     test/test-daily-utility-CompactOptional.cpp
     test/test-daily-support-BoostSerialization.cpp)
@@ -232,6 +246,7 @@ if(DAILY_BUILD_TESTING)
             daily::future
             daily::memory
             daily::program_options
+            daily::synchronisation
             daily::trace
             daily::utility
             Boost::serialization

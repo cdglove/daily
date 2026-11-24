@@ -9,6 +9,7 @@ project only pulls in what it uses.
 | `daily::container` | `SegmentedSequence` and `TieredSequence`, sequences where inserting or erasing in the middle only moves the elements of one segment, and `VirtualVector`, a contiguous vector whose elements never move as it grows |
 | `daily::memory` | `VirtualMemory`, reserved address space committed as it's used, and allocation categories, which account for memory by the part of a program that uses it |
 | `daily::memory_new` | Replaces the global `operator new` and `delete` so heap memory is charged to allocation categories. For executables only |
+| `daily::synchronisation` | `TicketGate`, which makes a reader-writer lock grant its locks in the order they're asked for, without making readers queue behind each other |
 | `daily::utility` | `compact_optional`, an optional the size of its type, which uses one value of the type to mean empty, and Boost.Serialization support for it |
 | `daily::future` | A future and promise with continuations, which can run where the result is set, where it's asked for, or on an executor |
 | `daily::fast_iostream` | `FastOStream` and `FastIStream`, which read and write numbers without the locale or formatting flags |
