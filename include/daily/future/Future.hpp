@@ -43,6 +43,10 @@
 //   execute::dispatch, execute::post and execute::defer submit it to an
 //     executor, with its function of the same name, as Asio's do.
 //
+// What a continuation throws is its result: it goes to the next in the chain,
+// and get rethrows it. Setting a promise's value never throws because of a
+// continuation, wherever the continuation runs.
+//
 // Each step of a chain shares the mutex of the promise at its root. promise,
 // packaged_task and then can be given an allocator for the shared states,
 // which is future_default_allocator if they aren't.
@@ -362,8 +366,7 @@ struct continue_on_continuation_helper {
     Return current_result = caller->continuation_(caller->parent_->get(lock));
     lock.lock();
     // Setting the result runs the continuations that follow this one and
-    // run where results are set, and rethrows what they throw, see
-    // do_continue.
+    // run where results are set. They keep what they throw.
     caller->set_finished_with_result(std::move(current_result), lock);
   }
 };
@@ -378,8 +381,7 @@ struct continue_on_continuation_helper<void, Return> {
     Return current_result = caller->continuation_();
     lock.lock();
     // Setting the result runs the continuations that follow this one and
-    // run where results are set, and rethrows what they throw, see
-    // do_continue.
+    // run where results are set. They keep what they throw.
     caller->set_finished_with_result(std::move(current_result), lock);
   }
 };
@@ -393,8 +395,7 @@ struct continue_on_continuation_helper<Param, void> {
     caller->continuation_(caller->parent_->get(lock));
     lock.lock();
     // Setting the result runs the continuations that follow this one and
-    // run where results are set, and rethrows what they throw, see
-    // do_continue.
+    // run where results are set. They keep what they throw.
     caller->set_finished_with_result(lock);
   }
 };
@@ -408,8 +409,7 @@ struct continue_on_continuation_helper<void, void> {
     caller->continuation_();
     lock.lock();
     // Setting the result runs the continuations that follow this one and
-    // run where results are set, and rethrows what they throw, see
-    // do_continue.
+    // run where results are set. They keep what they throw.
     caller->set_finished_with_result(lock);
   }
 };
@@ -430,20 +430,21 @@ class continue_on_basic_shared_state : public future_shared_state<Result> {
   template <typename Param, typename Return>
   friend struct continue_on_continuation_helper;
 
-  // Runs the continuation, and stores what it throws as its result.
-  //
-  // This doesn't work for an exception thrown after the continuation
-  // returns. Setting the result runs any continuation after this one that
-  // runs where results are set, which rethrows what it throws. That reaches
-  // the catch below with the lock held, where locking it again throws
-  // std::system_error, which escapes to whoever set the first result.
+  // Runs the continuation, and stores what it throws as its result, so
+  // that it goes to the next in the chain rather than to whoever set the
+  // parent's result. The continuation runs without the lock, but setting
+  // its result, which can also throw, runs with it.
   void do_continue(std::unique_lock<std::mutex>& lock) {
     try {
       continue_on_continuation_helper<ParentResult, Result>::call(this, lock);
     }
     catch(...) {
-      lock.lock();
-      this->set_finished_with_exception(std::current_exception(), lock);
+      if(!lock.owns_lock()) {
+        lock.lock();
+      }
+      if(!this->is_finished(lock)) {
+        this->set_finished_with_exception(std::current_exception(), lock);
+      }
     }
   } // namespace detail
 
@@ -468,7 +469,6 @@ class continue_on_any_shared_state
  private:
   void handle_continuation_result_ready(std::unique_lock<std::mutex>& lock) override {
     this->do_continue(lock);
-    this->check_exception(lock);
   }
 
   void handle_continuation_result_requested(std::unique_lock<std::mutex>& lock) override {
@@ -486,7 +486,6 @@ class continue_on_set_shared_state
  private:
   void handle_continuation_result_ready(std::unique_lock<std::mutex>& lock) override {
     this->do_continue(lock);
-    this->check_exception(lock);
   }
 
   void handle_continuation_result_requested(std::unique_lock<std::mutex>& lock) override {
@@ -572,6 +571,22 @@ struct submit_defer {
   }
 };
 
+// Runs body on the executor: body calls a continuation and sets its result,
+// and what it throws is stored as the continuation's result instead, rather
+// than escaping into the executor and leaving the continuation unfinished.
+template <typename Caller, typename Body>
+void run_continuation(Caller* caller, std::mutex& promise_mutex, Body&& body) {
+  try {
+    std::forward<Body>(body)();
+  }
+  catch(...) {
+    std::unique_lock<std::mutex> lock(promise_mutex);
+    if(!caller->is_finished(lock)) {
+      caller->set_finished_with_exception(std::current_exception(), lock);
+    }
+  }
+}
+
 // Submits a closure that calls a continuation with its parent's result and
 // sets its own result to what it returns. Specialised for continuations
 // that take or return nothing.
@@ -587,9 +602,11 @@ struct executor_continuation_helper {
       std::shared_ptr<std::mutex>& promise_mutex,
       Allocator const& alloc) {
     auto closure = [caller, p = caller->parent_->get(lock), promise_mutex] {
-      auto result = caller->continuation_(std::move(p));
-      std::unique_lock<std::mutex> lock(*promise_mutex);
-      caller->set_finished_with_result(std::move(result), lock);
+      run_continuation(caller, *promise_mutex, [&] {
+        auto result = caller->continuation_(std::move(p));
+        std::unique_lock<std::mutex> lock(*promise_mutex);
+        caller->set_finished_with_result(std::move(result), lock);
+      });
     };
 
     // Don't call user code with the lock still obtained.
@@ -608,9 +625,11 @@ struct executor_continuation_helper<Submiter, void, Return> {
       std::shared_ptr<std::mutex>& promise_mutex,
       Allocator const& alloc) {
     auto closure = [caller, promise_mutex] {
-      auto result = caller->continuation_();
-      std::unique_lock<std::mutex> lock(*promise_mutex);
-      caller->set_finished_with_result(std::move(result), lock);
+      run_continuation(caller, *promise_mutex, [&] {
+        auto result = caller->continuation_();
+        std::unique_lock<std::mutex> lock(*promise_mutex);
+        caller->set_finished_with_result(std::move(result), lock);
+      });
     };
 
     // Don't call user code with the lock still obtained.
@@ -629,9 +648,11 @@ struct executor_continuation_helper<Submiter, Param, void> {
       std::shared_ptr<std::mutex>& promise_mutex,
       Allocator const& alloc) {
     auto closure = [caller, p = caller->parent_->get(lock), promise_mutex] {
-      caller->continuation_(std::move(p));
-      std::unique_lock<std::mutex> lock(*promise_mutex);
-      caller->set_finished_with_result(lock);
+      run_continuation(caller, *promise_mutex, [&] {
+        caller->continuation_(std::move(p));
+        std::unique_lock<std::mutex> lock(*promise_mutex);
+        caller->set_finished_with_result(lock);
+      });
     };
 
     // Don't call user code with the lock still obtained.
@@ -650,9 +671,11 @@ struct executor_continuation_helper<Submiter, void, void> {
       std::shared_ptr<std::mutex>& promise_mutex,
       Allocator const& alloc) {
     auto closure = [caller, promise_mutex] {
-      caller->continuation_();
-      std::unique_lock<std::mutex> lock(*promise_mutex);
-      caller->set_finished_with_result(lock);
+      run_continuation(caller, *promise_mutex, [&] {
+        caller->continuation_();
+        std::unique_lock<std::mutex> lock(*promise_mutex);
+        caller->set_finished_with_result(lock);
+      });
     };
 
     // Don't call user code with the lock still obtained.
@@ -691,11 +714,23 @@ class executor_continuation_shared_state : public future_shared_state<Result> {
     // its own reference, so the chain stays alive until it has run.
     std::shared_ptr<std::mutex> promise_mutex = promise_mutex_.lock();
     assert(promise_mutex && lock.mutex() == promise_mutex.get());
-    executor_continuation_helper<Submitter, ParentResult, Result>::call(
-        this,
-        lock,
-        promise_mutex,
-        allocator_);
+    // Submitting can throw, such as if the executor can't allocate. That
+    // goes to the next in the chain too.
+    try {
+      executor_continuation_helper<Submitter, ParentResult, Result>::call(
+          this,
+          lock,
+          promise_mutex,
+          allocator_);
+    }
+    catch(...) {
+      if(!lock.owns_lock()) {
+        lock.lock();
+      }
+      if(!this->is_finished(lock)) {
+        this->set_finished_with_exception(std::current_exception(), lock);
+      }
+    }
   }
 
   // Don't store a shared_ptr here because as long as we're alive the parent

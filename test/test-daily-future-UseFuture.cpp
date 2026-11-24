@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 #include <atomic>
+#include <chrono>
 #include <boost/asio/async_result.hpp>
 #include <boost/asio/dispatch.hpp>
 #include <boost/asio/io_context.hpp>
@@ -105,6 +106,21 @@ BOOST_AUTO_TEST_CASE(future_use_future_executor) {
   looper.run();
   BOOST_TEST_CHECK(has_run == true);
   BOOST_TEST_CHECK(f2.get() == 2.f);
+}
+
+// A continuation that throws on the executor gives its future the exception,
+// rather than throwing it into the executor and leaving the future
+// unfinished.
+BOOST_AUTO_TEST_CASE(continuation_that_throws_on_an_executor) {
+  boost::asio::io_context looper;
+  daily::promise<float> p;
+  auto f = p.get_future().then(daily::execute::post, looper, [](float) -> float {
+    throw std::runtime_error("on the executor");
+  });
+  p.set_value(1.f);
+  BOOST_CHECK_NO_THROW(looper.run());
+  BOOST_TEST_REQUIRE((f.wait_for(std::chrono::seconds(10)) == daily::future_status::ready));
+  BOOST_CHECK_THROW(f.get(), std::runtime_error);
 }
 
 BOOST_AUTO_TEST_CASE(future_use_future_stress) {

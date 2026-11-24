@@ -393,18 +393,14 @@ BOOST_AUTO_TEST_CASE(promise_future_set_continuation_throws) {
 
   BOOST_TEST_CHECK(f2.valid() == true);
   BOOST_TEST_CHECK(f.valid() == false);
-  daily::future<short> const f3 = f2.then(daily::continue_on::get, [](int i) {
+  daily::future<short> f3 = f2.then(daily::continue_on::get, [](int i) {
     return static_cast<short>(i * 2);
   });
 
-  bool exception_caught = false;
-  try {
-    p.set_value(1.f);
-  }
-  catch(std::logic_error&) {
-    exception_caught = true;
-  }
-  BOOST_TEST_CHECK(exception_caught == true);
+  // The continuation's exception goes to the next in the chain, not to the
+  // setter.
+  BOOST_CHECK_NO_THROW(p.set_value(1.f));
+  BOOST_CHECK_THROW(f3.get(), std::logic_error);
 }
 
 BOOST_AUTO_TEST_CASE(future_wait) {
@@ -532,6 +528,55 @@ BOOST_AUTO_TEST_CASE(exception_propagates_through_set_continuation) {
     return i;
   });
   p.set_exception(std::make_exception_ptr(std::runtime_error("")));
+  BOOST_CHECK_THROW(f.get(), std::runtime_error);
+}
+
+// The second of two continuations that run where results are set throws.
+// Setting the first result doesn't, and the exception reaches the end of
+// the chain.
+BOOST_AUTO_TEST_CASE(set_value_does_not_throw_when_a_later_set_continuation_does) {
+  daily::promise<int> p;
+  daily::future<int> f =
+      p.get_future()
+          .then(daily::continue_on::set, [](int i) { return i + 1; })
+          .then(daily::continue_on::set, [](int) -> int {
+            throw std::runtime_error("second");
+          });
+  BOOST_CHECK_NO_THROW(p.set_value(1));
+  BOOST_CHECK_THROW(f.get(), std::runtime_error);
+}
+
+// The same with continuations that run wherever comes first, as then does
+// by default.
+BOOST_AUTO_TEST_CASE(set_value_does_not_throw_when_a_later_any_continuation_does) {
+  daily::promise<int> p;
+  daily::future<int> f = p.get_future()
+                             .then([](int i) { return i + 1; })
+                             .then([](int) -> int { throw std::runtime_error("second"); })
+                             .then([](int i) { return i; });
+  BOOST_CHECK_NO_THROW(p.set_value(1));
+  BOOST_CHECK_THROW(f.get(), std::runtime_error);
+}
+
+// A continuation's result that throws when it's moved into place.
+BOOST_AUTO_TEST_CASE(a_result_that_throws_when_set_goes_to_the_next_in_the_chain) {
+  struct ThrowsWhenMoved {
+    ThrowsWhenMoved() = default;
+    ThrowsWhenMoved(ThrowsWhenMoved const&) = default;
+    ThrowsWhenMoved(ThrowsWhenMoved&&) {
+      throw std::runtime_error("move");
+    }
+    ThrowsWhenMoved& operator=(ThrowsWhenMoved const&) = default;
+    ThrowsWhenMoved& operator=(ThrowsWhenMoved&&) {
+      throw std::runtime_error("move");
+    }
+  };
+  daily::promise<int> p;
+  daily::future<int> f =
+      p.get_future()
+          .then(daily::continue_on::set, [](int) { return ThrowsWhenMoved(); })
+          .then(daily::continue_on::set, [](ThrowsWhenMoved const&) { return 0; });
+  BOOST_CHECK_NO_THROW(p.set_value(1));
   BOOST_CHECK_THROW(f.get(), std::runtime_error);
 }
 
