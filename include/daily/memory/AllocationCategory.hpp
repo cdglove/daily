@@ -25,9 +25,10 @@
 // it:
 //
 // - Heap memory is charged when the executable links daily::memory_new,
-//   which replaces the global operator new and delete. The figures count the
-//   bytes requested, not the allocator's overhead. Memory allocated with
-//   malloc directly isn't counted.
+//   which replaces the global operator new and delete. Small allocations
+//   count the allocator's usable block size, including the tracking header;
+//   large allocations are mapped directly from the operating system and count
+//   the mapped pages. Memory allocated with malloc directly isn't counted.
 // - Committed virtual memory is charged to the category of the VirtualMemory
 //   reservation it's in. The figures count committed pages, which may not
 //   all be resident.

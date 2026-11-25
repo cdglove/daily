@@ -33,6 +33,24 @@
 
 namespace daily {
 
+namespace detail {
+
+// Leaves room for operator new's tracking header and the system allocator's
+// chunk metadata (up to 32 bytes together) so a full segment fits inside an
+// exact power-of-two block (8KiB for 4-byte elements, 16KiB for 8-byte
+// elements) without spilling into the next size class or page.
+template <typename T>
+constexpr std::size_t default_split_threshold() {
+  constexpr std::size_t kBaseElements = 2 * 1024;
+  constexpr std::size_t kAllocatorSlack = 2 * __STDCPP_DEFAULT_NEW_ALIGNMENT__;
+  constexpr std::size_t kSlackElements = (kAllocatorSlack + sizeof(T) - 1) /
+                                         sizeof(T);
+  return kSlackElements < kBaseElements ? kBaseElements - kSlackElements
+                                        : kBaseElements;
+}
+
+} // namespace detail
+
 // A sequence stored as a list of segments, each a std::vector of up to
 // SplitThreshold elements. Inserting or erasing only shifts elements within
 // one segment. A prefix sum of segment sizes gives random access: finding the
@@ -44,12 +62,17 @@ namespace daily {
 // a neighbour. Smaller segments make inserting and erasing cheaper, but mean
 // more segments to search and to adjust the prefix sum for.
 //
-// The default of 2K elements was measured with bench-fsdb-ordinal-container
-// and bench-fsdb on containers of 100K to 10M elements. The best size grows
-// with the container: about 1K for 100K elements, 2K for 1M, and 2K to 4K
-// for 10M. 2K was within about 10% of the best at every size, and much
-// faster than larger segments at inserting and erasing.
-template <typename T, std::size_t SplitThreshold = 2 * 1024, std::size_t MergeThreshold = SplitThreshold / 4>
+// The default of ~2K elements (minus a few elements of slack so allocator
+// headers don't push a full segment across a page or size-class boundary) was
+// measured with bench-fsdb-ordinal-container and bench-fsdb on containers of
+// 100K to 10M elements. The best size grows with the container: about 1K for
+// 100K elements, 2K for 1M, and 2K to 4K for 10M. 2K was within about 10% of
+// the best at every size, and much faster than larger segments at inserting
+// and erasing.
+template <
+    typename T,
+    std::size_t SplitThreshold = detail::default_split_threshold<T>(),
+    std::size_t MergeThreshold = SplitThreshold / 4>
 class SegmentedSequence
     : public boost::stl_interfaces::sequence_container_interface<
           SegmentedSequence<T, SplitThreshold, MergeThreshold>,

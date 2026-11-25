@@ -20,10 +20,13 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <new>
 #include <thread>
+#include <vector>
 
 #include "daily/memory/AllocationCategory.hpp"
+#include "daily/memory/VirtualMemory.hpp"
 
 namespace {
 
@@ -71,7 +74,8 @@ BOOST_AUTO_TEST_CASE(AllocationCategoryNew_charges_new_and_delete) {
     during = heap(kCategory);
     delete p;
   }
-  BOOST_TEST(during - before == static_cast<std::int64_t>(sizeof(Plain)));
+  BOOST_TEST(during - before >= static_cast<std::int64_t>(sizeof(Plain)));
+  BOOST_TEST(during - before <= static_cast<std::int64_t>(2 * sizeof(Plain)));
   BOOST_TEST(heap(kCategory) == before);
 }
 
@@ -85,7 +89,8 @@ BOOST_AUTO_TEST_CASE(AllocationCategoryNew_charges_arrays) {
     during = heap(kCategory);
     delete[] p;
   }
-  BOOST_TEST(during - before == 777);
+  BOOST_TEST(during - before >= 777);
+  BOOST_TEST(during - before <= 2 * 777);
   BOOST_TEST(heap(kCategory) == before);
 }
 
@@ -107,8 +112,8 @@ BOOST_AUTO_TEST_CASE(AllocationCategoryNew_charges_nothrow_and_sized) {
     ::operator delete(raw, 500);
   }
   BOOST_TEST(allocated);
-  BOOST_TEST(after_nothrow - before == static_cast<std::int64_t>(sizeof(Plain)));
-  BOOST_TEST(after_sized - before == 500);
+  BOOST_TEST(after_nothrow - before >= static_cast<std::int64_t>(sizeof(Plain)));
+  BOOST_TEST(after_sized - before >= 500);
   BOOST_TEST(heap(kCategory) == before);
 }
 
@@ -132,7 +137,7 @@ BOOST_AUTO_TEST_CASE(AllocationCategoryNew_aligns_over_aligned_types) {
   BOOST_TEST(page_aligned_address != 0u);
   BOOST_TEST(page_aligned_address % alignof(PageAligned) == 0u);
   BOOST_TEST(
-      during - before ==
+      during - before >=
       static_cast<std::int64_t>(sizeof(Aligned) + sizeof(PageAligned)));
   BOOST_TEST(heap(kCategory) == before);
 }
@@ -147,8 +152,54 @@ BOOST_AUTO_TEST_CASE(AllocationCategoryNew_frees_on_another_thread) {
     daily::AllocationCategoryScope scope(kCategory);
     p = new Plain;
   }
-  BOOST_TEST(heap(kCategory) - before == static_cast<std::int64_t>(sizeof(Plain)));
+  BOOST_TEST(heap(kCategory) - before >= static_cast<std::int64_t>(sizeof(Plain)));
   std::thread([p] { delete p; }).join();
+  BOOST_TEST(heap(kCategory) == before);
+}
+
+// Large allocations map whole OS pages with out-of-band metadata, so an exact
+// page multiple doesn't spill into an extra page.
+BOOST_AUTO_TEST_CASE(AllocationCategoryNew_maps_large_allocations_without_spill) {
+  constexpr daily::AllocationCategory kCategory = 106;
+  std::size_t const page = daily::VirtualMemory::page_size();
+  std::size_t const exact_bytes = std::max<std::size_t>(std::size_t{1} << 20, 4 * page);
+  std::int64_t const before = heap(kCategory);
+  char* p = nullptr;
+  {
+    daily::AllocationCategoryScope const scope(kCategory);
+    p = keep(new char[exact_bytes]);
+    std::memset(p, 0x5A, exact_bytes);
+  }
+  BOOST_TEST(reinterpret_cast<std::uintptr_t>(p) % page == 0u);
+  BOOST_TEST(heap(kCategory) - before == static_cast<std::int64_t>(exact_bytes));
+  std::thread([p] { delete[] p; }).join();
+  BOOST_TEST(heap(kCategory) == before);
+}
+
+BOOST_AUTO_TEST_CASE(AllocationCategoryNew_handles_virtual_table_churn_and_growth) {
+  constexpr daily::AllocationCategory kCategory = 107;
+  std::size_t const block_bytes = std::max<std::size_t>(
+      std::size_t{1} << 20,
+      daily::VirtualMemory::page_size());
+  std::int64_t const before = heap(kCategory);
+  {
+    daily::AllocationCategoryScope const scope(kCategory);
+    std::vector<char*> blocks;
+    blocks.reserve(600);
+    for(int i = 0; i < 600; ++i) {
+      blocks.push_back(keep(new char[block_bytes]));
+      blocks.back()[0] = static_cast<char>(i);
+    }
+    // Delete every second block to exercise cluster backward-shift deletion,
+    // then allocate again before freeing the rest.
+    for(std::size_t i = 0; i < blocks.size(); i += 2) {
+      delete[] blocks[i];
+      blocks[i] = keep(new char[block_bytes]);
+    }
+    for(char* b : blocks) {
+      delete[] b;
+    }
+  }
   BOOST_TEST(heap(kCategory) == before);
 }
 
