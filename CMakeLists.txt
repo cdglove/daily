@@ -35,6 +35,16 @@ if(PROJECT_IS_TOP_LEVEL)
     URL https://github.com/boostorg/boost/releases/download/boost-1.92.0/boost-1.92.0-cmake.tar.xz
     URL_HASH MD5=542f895860ceb7a99c9aa4d02f6073c8
     DOWNLOAD_EXTRACT_TIMESTAMP True)
+
+  # Boost.Locale isn't used, and its CMakeLists fails to configure with newer
+  # CMake: it gives source_group(TREE include/boost/locale) the file
+  # include/boost/locale.hpp, which isn't under it. Fixed upstream for 1.93.
+  if(FISSION_BOOST_VERSION VERSION_GREATER_EQUAL 1.93)
+    message(AUTHOR_WARNING
+      "Boost.Locale configures with newer CMake as of Boost 1.93, so "
+      "BOOST_EXCLUDE_LIBRARIES locale can be removed.")
+  endif()
+  set(BOOST_EXCLUDE_LIBRARIES locale)
   FetchContent_MakeAvailable(Boost)
 
   set(BENCHMARK_ENABLE_TESTING
