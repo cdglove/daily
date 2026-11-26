@@ -31,9 +31,9 @@ FetchContent_MakeAvailable(daily)
 target_link_libraries(my_target PRIVATE daily::container daily::memory)
 ```
 
-Included in another project like this, daily finds Boost with
-`find_package`, so the project has to provide it. Its tests and benchmarks
-aren't built unless `DAILY_BUILD_TESTING` or `DAILY_BUILD_BENCHMARKS` is set.
+daily fetches Boost with `FetchContent` unless the parent project has already
+declared `Boost` itself. Its tests and benchmarks aren't built unless
+`DAILY_BUILD_TESTING` or `DAILY_BUILD_BENCHMARKS` is set.
 
 ## Building it on its own
 

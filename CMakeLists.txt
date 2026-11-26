@@ -15,10 +15,10 @@
 # General purpose utilities. Each component is its own target, so a project
 # only pulls in what it uses.
 #
-# Built on its own, this downloads Boost and Google Benchmark, and builds its
-# tests and benchmarks. Included in another project, such as with
-# FetchContent, it finds Boost through find_package, from the project, and
-# leaves the tests and benchmarks out unless DAILY_BUILD_TESTING or
+# Boost and Google Benchmark are declared with FetchContent and
+# OVERRIDE_FIND_PACKAGE unless a parent project has already declared them, and
+# populated on demand by find_package. Tests and benchmarks are only built by
+# default when daily is the top-level project, or when DAILY_BUILD_TESTING or
 # DAILY_BUILD_BENCHMARKS is set.
 cmake_minimum_required(VERSION 3.25)
 
@@ -26,40 +26,44 @@ project(daily LANGUAGES CXX)
 
 if(PROJECT_IS_TOP_LEVEL)
   set(CMAKE_CXX_STANDARD 20)
-  include(FetchContent)
-  FetchContent_Declare(
-    Boost
-    SYSTEM
-    OVERRIDE_FIND_PACKAGE
-    EXCLUDE_FROM_ALL
-    URL https://github.com/boostorg/boost/releases/download/boost-1.92.0/boost-1.92.0-cmake.tar.xz
-    URL_HASH MD5=542f895860ceb7a99c9aa4d02f6073c8
-    DOWNLOAD_EXTRACT_TIMESTAMP True)
-
-  # Boost.Locale isn't used, and its CMakeLists fails to configure with newer
-  # CMake: it gives source_group(TREE include/boost/locale) the file
-  # include/boost/locale.hpp, which isn't under it. Fixed upstream for 1.93.
-  if(FISSION_BOOST_VERSION VERSION_GREATER_EQUAL 1.93)
-    message(AUTHOR_WARNING
-      "Boost.Locale configures with newer CMake as of Boost 1.93, so "
-      "BOOST_EXCLUDE_LIBRARIES locale can be removed.")
-  endif()
-  set(BOOST_EXCLUDE_LIBRARIES locale)
-  FetchContent_MakeAvailable(Boost)
-
-  set(BENCHMARK_ENABLE_TESTING
-      OFF
-      CACHE BOOL "" FORCE)
-  FetchContent_Declare(
-    benchmark
-    SYSTEM
-    OVERRIDE_FIND_PACKAGE
-    EXCLUDE_FROM_ALL
-    URL https://github.com/google/benchmark/archive/refs/tags/v1.10.0.tar.gz
-    URL_HASH MD5=046d7d6b9a11db09693af9ea2a8c7a82
-    USES_TERMINAL_DOWNLOAD TRUE)
-  FetchContent_MakeAvailable(benchmark)
 endif()
+
+include(FetchContent)
+
+set(DAILY_BOOST_VERSION 1.92.0)
+# Boost.Locale isn't used, and its CMakeLists fails to configure with newer
+# CMake: it gives source_group(TREE include/boost/locale) the file
+# include/boost/locale.hpp, which isn't under it. Fixed upstream for 1.93.
+if(DAILY_BOOST_VERSION VERSION_GREATER_EQUAL 1.93)
+  message(AUTHOR_WARNING
+    "Boost.Locale configures with newer CMake as of Boost 1.93, so "
+    "BOOST_EXCLUDE_LIBRARIES locale can be removed.")
+endif()
+if(NOT DEFINED BOOST_EXCLUDE_LIBRARIES)
+  set(BOOST_EXCLUDE_LIBRARIES locale)
+endif()
+FetchContent_Declare(
+  Boost
+  SYSTEM
+  OVERRIDE_FIND_PACKAGE
+  EXCLUDE_FROM_ALL
+  URL https://github.com/boostorg/boost/releases/download/boost-${DAILY_BOOST_VERSION}/boost-${DAILY_BOOST_VERSION}-cmake.tar.xz
+  URL_HASH MD5=542f895860ceb7a99c9aa4d02f6073c8
+  DOWNLOAD_EXTRACT_TIMESTAMP True)
+
+set(BENCHMARK_ENABLE_TESTING
+    OFF
+    CACHE BOOL "" FORCE)
+FetchContent_Declare(
+  benchmark
+  SYSTEM
+  OVERRIDE_FIND_PACKAGE
+  EXCLUDE_FROM_ALL
+  URL https://github.com/google/benchmark/archive/refs/tags/v1.10.0.tar.gz
+  URL_HASH MD5=046d7d6b9a11db09693af9ea2a8c7a82
+  USES_TERMINAL_DOWNLOAD TRUE)
+
+find_package(Boost REQUIRED)
 
 # Algorithms
 add_library(daily_algorithm INTERFACE)
@@ -73,8 +77,6 @@ target_sources(daily_algorithm
 )
 
 target_compile_features(daily_algorithm INTERFACE cxx_std_20)
-
-find_package(Boost REQUIRED)
 
 # Memory
 option(DAILY_MEMORY_CATEGORIES "Track allocations by category" ON)
